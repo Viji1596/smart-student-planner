@@ -1,0 +1,87 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+model User {
+  id        String   @id @default(cuid())
+  googleId  String   @unique
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tasks             Task[]
+  scheduleSessions  ScheduleSession[]
+  timetableEntries TimetableEntry[]
+  availability Availability[]
+}
+model Task {
+  id               String   @id @default(cuid())
+  userId           String
+  title            String
+  priority         String
+  estimatedMinutes Int
+  dueDate          DateTime?
+  completed        Boolean  @default(false)
+
+  isRecurring      Boolean  @default(false)
+  recurrenceType   String?
+  recurrenceEnd    DateTime?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduleSessions ScheduleSession[]
+
+  @@index([userId, isRecurring])
+}
+model ScheduleSession {
+  id        String   @id @default(cuid())
+  userId    String
+  taskId    String
+  startTime DateTime
+  endTime   DateTime
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, startTime])
+  @@index([taskId])
+}
+model TimetableEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  dayOfWeek Int
+  title     String
+  startTime String
+  endTime   String
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, dayOfWeek])
+}
+model Availability {
+  id        String   @id @default(cuid())
+  userId    String
+  dayOfWeek Int
+  startTime String
+  endTime   String
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, dayOfWeek])
+}
