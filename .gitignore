@@ -1,0 +1,8 @@
+.env
+local.properties
+node_modules/
+.gradle/
+build/
+.agents/
+.claude/
+.windsurf/

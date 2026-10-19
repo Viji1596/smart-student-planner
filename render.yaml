@@ -1,0 +1,21 @@
+# Render Blueprint: describes the backend so Render can create it for you.
+# Render reads this file from the root of your repository.
+services:
+  - type: web
+    name: smart-student-planner-api
+    runtime: node
+    plan: free            # without this line Render picks a paid plan
+    rootDir: backend      # the Node server lives in the backend/ folder
+    # Install, generate the Prisma client, then apply any new database migrations.
+    buildCommand: npm install && npx prisma generate --config prisma7.config.ts && npx prisma migrate deploy --config prisma7.config.ts
+    startCommand: npm start
+    healthCheckPath: /health   # a light page that does not touch the database
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL        # you type this into Render's dashboard; it is never stored in Git
+        sync: false
+      - key: GOOGLE_WEB_CLIENT_ID
+        sync: false
+      - key: JWT_SECRET          # Render generates a long random value for you
+        generateValue: true

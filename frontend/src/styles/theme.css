@@ -1,0 +1,270 @@
+:root {
+  --bg: #f4efff;
+  --surface: #ffffff;
+  --text: #111111;
+  --muted-text: #666666;
+  --border: #ded6ef;
+  --accent: #7c3aed;
+}
+
+body.dark {
+  --bg: #120d1a;
+  --surface: #1c1526;
+  --text: #ffffff;
+  --muted-text: #b8afc4;
+  --border: #352b43;
+  --accent: #a855f7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Arial, sans-serif;
+}
+
+/* Navigation */
+
+nav {
+  width: fit-content;
+  margin: 20px auto 0;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+nav button {
+  min-width: 110px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted-text);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+nav button:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+nav button:focus {
+  outline: none;
+}
+
+/* Theme toggle */
+
+.theme-toggle {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+}
+
+.theme-toggle button {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Dashboard */
+
+.dashboard {
+  min-height: 100vh;
+  padding: 40px;
+}
+
+.dashboard h1 {
+  text-align: center;
+  font-size: 48px;
+  margin: 20px 0;
+}
+
+.dashboard-subtitle {
+  text-align: center;
+  color: var(--muted-text);
+  font-size: 18px;
+  margin-top: -10px;
+}
+
+.dashboard-grid {
+  max-width: 1000px;
+  margin: 60px auto 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.dashboard-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px;
+  min-height: 180px;
+}
+
+.dashboard-card h2 {
+  margin-top: 0;
+}
+
+.dashboard-card p {
+  color: var(--muted-text);
+  line-height: 1.6;
+}
+
+/* Tasks page */
+
+.tasks-page {
+  min-height: 100vh;
+  padding: 40px;
+}
+
+.tasks-page h1 {
+  text-align: center;
+  font-size: 42px;
+  margin-bottom: 12px;
+}
+
+.tasks-page > p {
+  text-align: center;
+  color: var(--muted-text);
+  font-size: 18px;
+}
+
+/* Task form */
+
+.task-form {
+  max-width: 760px;
+  margin: 40px auto;
+  padding: 28px;
+  display: grid;
+  gap: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+.task-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.task-form input,
+.task-form select {
+  width: 100%;
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.task-form input:focus,
+.task-form select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+}
+
+.task-form button {
+  padding: 13px 18px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.task-form button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+/* Task list */
+
+.task-list {
+  max-width: 760px;
+  margin: 50px auto;
+}
+
+.task-list h2 {
+  margin-bottom: 20px;
+}
+
+.task-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 14px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+}
+
+.task-card h3 {
+  margin: 0 0 12px;
+}
+
+.task-card p {
+  margin: 6px 0;
+  color: var(--muted-text);
+}
+
+/* Responsive */
+
+@media (max-width: 800px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    margin: 40px 20px 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .tasks-page {
+    padding: 24px 16px;
+  }
+
+  .task-form {
+    margin: 30px auto;
+    padding: 20px;
+  }
+}
+
+@media (max-width: 500px) {
+  nav {
+    width: calc(100% - 32px);
+    justify-content: center;
+  }
+
+  nav button {
+    flex: 1;
+    min-width: 0;
+  }
+}
