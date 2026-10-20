@@ -60,4 +60,13 @@ interface PlannerApi {
 
     @DELETE("habit-completions/{id}")
     suspend fun deleteCompletion(@Path("id") id: String): DeleteResponse
+
+    @POST("timetable/import")
+    suspend fun importTimetable(@Body body: ImportRequest): ImportResponse
+
+    @POST("timetable/import")
+    suspend fun importPages(@Body body: ImportPagesRequest): ImportResponse
+
+    @GET("timetable/import/status")
+    suspend fun importStatus(): ImportStatus
 }

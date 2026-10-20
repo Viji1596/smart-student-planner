@@ -22,6 +22,10 @@ class TasksViewModel(private val repo: TaskRepository) : ViewModel() {
         viewModelScope.launch { repo.add(title, priority, minutes, dueDate) }
     }
 
+    fun update(task: TaskEntity, title: String, priority: String, minutes: Int, dueDate: Long?) {
+        viewModelScope.launch { repo.update(task, title, priority, minutes, dueDate) }
+    }
+
     fun setCompleted(task: TaskEntity, completed: Boolean) {
         viewModelScope.launch { repo.setCompleted(task, completed) }
     }

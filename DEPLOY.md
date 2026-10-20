@@ -94,3 +94,15 @@ server (and then the free database) waking up. Later opens are quick.
   October 2026). A free "uptime" pinger can keep one awake, but it uses your free hours.
 - Do NOT use Render's own free database: Render's free databases expire. Keep using Neon.
 - Never commit `backend/.env`, `android/local.properties` or your Google client secret.
+
+## Optional: reading timetables from PDFs and photos
+Excel (.xlsx) and CSV timetables in a normal grid are read by the server itself and need nothing extra.
+PDFs and photos are read by an AI model, which needs an API key (it is a paid service, billed by use).
+1. Create an account and an API key at console.anthropic.com.
+2. Render dashboard -> your service -> **Environment** -> **Add Environment Variable**:
+   - Key `ANTHROPIC_API_KEY`, value = your key.
+   - Optional: `ANTHROPIC_MODEL` if you want a specific model.
+3. Save. Render restarts the service (about a minute).
+Never put the key in the app, in Git, or in a chat. Without the key, importing a PDF or photo shows a message
+explaining that the AI reader isn't set up, and Excel/CSV imports keep working.
+

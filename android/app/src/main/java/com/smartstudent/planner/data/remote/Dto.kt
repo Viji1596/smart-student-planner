@@ -135,3 +135,39 @@ data class CompletionUpsertRequest(val habitId: String, val date: String)
 
 @Serializable
 data class CompletionsResponse(val completions: List<CompletionDto>, val serverTime: String)
+
+@Serializable
+data class ImportRequest(val filename: String, val data: String)
+
+@Serializable
+data class ImportedEntryDto(
+    val dayOfWeek: Int,
+    val title: String,
+    val startTime: String,
+    val endTime: String,
+)
+
+@Serializable
+data class ImportResponse(
+    val entries: List<ImportedEntryDto>,
+    val warnings: List<String> = emptyList(),
+    val method: String = "",
+)
+
+/** The error body the server sends: {"message": "..."} */
+@Serializable
+data class ApiMessage(val message: String? = null, val code: String? = null)
+
+/** A word the phone recognised, with its position in the picture. */
+@Serializable
+data class BoxDto(val text: String, val x0: Float, val y0: Float, val x1: Float, val y1: Float)
+
+@Serializable
+data class PageDto(val boxes: List<BoxDto>)
+
+/** Everything the phone recognised in a photo or a scanned PDF: one entry per page. */
+@Serializable
+data class ImportPagesRequest(val pages: List<PageDto>)
+
+@Serializable
+data class ImportStatus(val ai: Boolean = false)

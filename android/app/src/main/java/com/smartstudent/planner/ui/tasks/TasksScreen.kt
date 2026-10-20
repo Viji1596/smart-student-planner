@@ -109,6 +109,7 @@ fun TasksScreen(
     val viewModel: TasksViewModel = viewModel(factory = TasksViewModel.factory(container))
     val tasks by viewModel.tasks.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<TaskEntity?>(null) }
     var filter by remember { mutableStateOf(TaskFilter.ALL) }
 
     // The "+" button in the bottom bar asks this screen to open the add dialog.
@@ -163,6 +164,7 @@ fun TasksScreen(
         items(shown, key = { it.id }) { task ->
             TaskCard(
                 task = task,
+                onEdit = { editing = task },
                 onToggle = { viewModel.setCompleted(task, !task.completed) },
                 onDelete = { viewModel.delete(task) },
             )
@@ -170,18 +172,30 @@ fun TasksScreen(
     }
 
     if (showAddDialog) {
-        AddTaskDialog(
+        TaskDialog(
+            initial = null,
             onDismiss = { showAddDialog = false },
-            onAdd = { title, priority, minutes, due ->
+            onSave = { title, priority, minutes, due ->
                 viewModel.add(title, priority, minutes, due)
                 showAddDialog = false
+            },
+        )
+    }
+
+    editing?.let { task ->
+        TaskDialog(
+            initial = task,
+            onDismiss = { editing = null },
+            onSave = { title, priority, minutes, due ->
+                viewModel.update(task, title, priority, minutes, due)
+                editing = null
             },
         )
     }
 }
 
 @Composable
-private fun TaskCard(task: TaskEntity, onToggle: () -> Unit, onDelete: () -> Unit) {
+private fun TaskCard(task: TaskEntity, onEdit: () -> Unit, onToggle: () -> Unit, onDelete: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val overdue = !task.completed && task.dueDate != null && task.dueDate < System.currentTimeMillis()
     var menuOpen by remember { mutableStateOf(false) }
@@ -200,7 +214,7 @@ private fun TaskCard(task: TaskEntity, onToggle: () -> Unit, onDelete: () -> Uni
         if (task.dirty) append(" · not synced")
     }
 
-    WhiteCard(Modifier.fillMaxWidth()) {
+    WhiteCard(Modifier.fillMaxWidth(), onClick = onEdit) {
         Row(Modifier.padding(20.dp), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f)) {
                 Text(topLine, fontSize = 14.sp, color = if (overdue) scheme.error else scheme.onSurfaceVariant)
@@ -224,6 +238,13 @@ private fun TaskCard(task: TaskEntity, onToggle: () -> Unit, onDelete: () -> Uni
                         Icon(Icons.Default.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            onClick = {
+                                menuOpen = false
+                                onEdit()
+                            },
+                        )
                         DropdownMenuItem(
                             text = { Text("Delete") },
                             onClick = {
@@ -253,13 +274,18 @@ private fun TaskCard(task: TaskEntity, onToggle: () -> Unit, onDelete: () -> Uni
     }
 }
 
+/** Adds a task ([initial] = null) or edits an existing one. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddTaskDialog(onDismiss: () -> Unit, onAdd: (String, String, Int, Long?) -> Unit) {
-    var title by remember { mutableStateOf("") }
-    var priority by remember { mutableStateOf("Medium") }
-    var minutes by remember { mutableStateOf("30") }
-    var dueMillis by remember { mutableStateOf<Long?>(null) }
+private fun TaskDialog(
+    initial: TaskEntity?,
+    onDismiss: () -> Unit,
+    onSave: (String, String, Int, Long?) -> Unit,
+) {
+    var title by remember { mutableStateOf(initial?.title ?: "") }
+    var priority by remember { mutableStateOf(initial?.priority ?: "Medium") }
+    var minutes by remember { mutableStateOf((initial?.estimatedMinutes ?: 30).toString()) }
+    var dueMillis by remember { mutableStateOf(initial?.dueDate) }
     var showPicker by remember { mutableStateOf(false) }
 
     val minutesValue = minutes.toIntOrNull()
@@ -267,7 +293,7 @@ private fun AddTaskDialog(onDismiss: () -> Unit, onAdd: (String, String, Int, Lo
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New task") },
+        title = { Text(if (initial == null) "New task" else "Edit task") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -292,6 +318,12 @@ private fun AddTaskDialog(onDismiss: () -> Unit, onAdd: (String, String, Int, Lo
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
+                if (initial != null && initial.spentMinutes > 0) {
+                    Text(
+                        "${initial.spentMinutes} min already done is kept.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { showPicker = true }) {
                         Text(dueMillis?.let { "Due ${formatDue(it)}" } ?: "Set due date (optional)")
@@ -301,15 +333,19 @@ private fun AddTaskDialog(onDismiss: () -> Unit, onAdd: (String, String, Int, Lo
             }
         },
         confirmButton = {
-            TextButton(enabled = valid, onClick = { onAdd(title, priority, minutesValue!!, dueMillis) }) {
-                Text("Add")
+            TextButton(enabled = valid, onClick = { onSave(title, priority, minutesValue!!, dueMillis) }) {
+                Text(if (initial == null) "Add" else "Save")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 
     if (showPicker) {
-        val state = rememberDatePickerState()
+        // The picker works in UTC dates; show the task's current due date as the starting point.
+        val startMillis = dueMillis?.let {
+            dueDay(it).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        }
+        val state = rememberDatePickerState(initialSelectedDateMillis = startMillis)
         DatePickerDialog(
             onDismissRequest = { showPicker = false },
             confirmButton = {

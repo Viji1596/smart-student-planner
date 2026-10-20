@@ -67,8 +67,10 @@ import com.smartstudent.planner.ui.home.HomeScreen
 import com.smartstudent.planner.ui.profile.ProfilePage
 import com.smartstudent.planner.ui.profile.ProfileScreen
 import com.smartstudent.planner.ui.progress.ProgressScreen
+import com.smartstudent.planner.ui.reminders.RemindersScreen
 import com.smartstudent.planner.ui.settings.SettingsScreen
 import com.smartstudent.planner.ui.tasks.TasksScreen
+import com.smartstudent.planner.ui.timetable.TimetableImportScreen
 import com.smartstudent.planner.ui.timetable.TimetableScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -177,7 +179,7 @@ fun AppShell(container: AppContainer) {
 
     // Back from a Profile sub-page returns to the Profile list.
     BackHandler(enabled = tab == Tab.PROFILE && profilePage != ProfilePage.ROOT) {
-        profilePage = ProfilePage.ROOT
+        profilePage = if (profilePage == ProfilePage.IMPORT) ProfilePage.TIMETABLE else ProfilePage.ROOT
     }
 
     Scaffold(
@@ -215,6 +217,10 @@ fun AppShell(container: AppContainer) {
                         profilePage = ProfilePage.ROOT
                     },
                     onViewAllTasks = { tab = Tab.TASKS },
+                    onOpenReminders = {
+                        tab = Tab.PROFILE
+                        profilePage = ProfilePage.REMINDERS
+                    },
                 )
                 Tab.TASKS -> TasksScreen(
                     container,
@@ -230,9 +236,15 @@ fun AppShell(container: AppContainer) {
                         onSignOut = shell::signOut,
                     )
                     ProfilePage.ROUTINE -> SettingsScreen(container, onBack = { profilePage = ProfilePage.ROOT })
+                    ProfilePage.REMINDERS -> RemindersScreen(container, onBack = { profilePage = ProfilePage.ROOT })
+                    ProfilePage.IMPORT -> TimetableImportScreen(
+                        container,
+                        onBack = { profilePage = ProfilePage.TIMETABLE },
+                    )
                     ProfilePage.TIMETABLE -> TimetableScreen(
                         container,
                         onBack = { profilePage = ProfilePage.ROOT },
+                        onImport = { profilePage = ProfilePage.IMPORT },
                         addRequested = addRequest == AddKind.CLASS,
                         onAddConsumed = { addRequest = null },
                     )

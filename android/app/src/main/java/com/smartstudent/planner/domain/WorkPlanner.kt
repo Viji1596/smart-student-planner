@@ -94,27 +94,36 @@ object WorkPlanner {
         }
     }
 
-    /** The slice of each open task that should be worked on during [date]. */
+    /**
+     * The slice of each open task that should be worked on during [date].
+     * [doneToday] is how many minutes of each task were already worked (or are being worked) today:
+     * the day's share counts those, so finishing today's share doesn't make another one appear.
+     */
     fun taskItems(
         tasks: List<TaskInfo>,
         date: LocalDate,
         maxSession: Int = Scheduler.MAX_SESSION,
+        doneToday: Map<String, Int> = emptyMap(),
     ): List<WorkItem> = tasks.mapNotNull { task ->
         val remaining = task.estimatedMinutes - task.spentMinutes
         if (remaining <= 0) return@mapNotNull null
 
+        val done = doneToday[task.id] ?: 0
+        val atStartOfDay = remaining + done // what was left when the day began
         val tier = tierFor(task.dueDay, date)
         val share = when {
-            task.dueDay == null -> minOf(remaining, 60)
+            task.dueDay == null -> minOf(atStartOfDay, 60) - done
             tier <= 1 -> remaining // overdue or due today: all of it
-            remaining <= maxSession -> remaining // small enough to finish in one go
+            atStartOfDay <= maxSession -> remaining // small enough to finish in one go
             else -> {
                 // Spread a big task over the days left, but not in slivers.
                 val daysInclusive = (ChronoUnit.DAYS.between(date, task.dueDay) + 1).toInt()
-                val perDay = (remaining + daysInclusive - 1) / daysInclusive
-                perDay.coerceAtLeast(30).coerceAtMost(remaining)
+                val perDay = (atStartOfDay + daysInclusive - 1) / daysInclusive
+                perDay.coerceAtLeast(30).coerceAtMost(atStartOfDay) - done
             }
-        }
+        }.coerceAtMost(remaining)
+        if (share <= 0) return@mapNotNull null
+
         WorkItem(
             kind = WorkKind.TASK,
             refId = task.id,
@@ -192,11 +201,13 @@ object DayBuilder {
         completions: Map<String, Set<LocalDate>>,
         date: LocalDate,
         nowMin: Int?,
+        doneToday: Map<String, Int> = emptyMap(),
     ): DayView {
         val plan = DayPlanner.plan(rules, entries)
         val earliest = nowMin?.let { ((it + 4) / 5) * 5 }
 
-        val items = WorkPlanner.taskItems(tasks, date) + WorkPlanner.habitItems(habits, completions, date)
+        val items = WorkPlanner.taskItems(tasks, date, doneToday = doneToday) +
+            WorkPlanner.habitItems(habits, completions, date)
         val schedule = Scheduler.schedule(
             free = plan.freeBlocks,
             items = items,
@@ -238,6 +249,7 @@ object DayBuilder {
         startDate: LocalDate,
         days: Int,
         nowMin: Int?,
+        doneToday: Map<String, Int> = emptyMap(),
     ): List<DayView> {
         var openTasks = tasks
         val done: MutableMap<String, MutableSet<LocalDate>> =
@@ -254,6 +266,7 @@ object DayBuilder {
                 completions = done,
                 date = date,
                 nowMin = if (i == 0) nowMin else null,
+                doneToday = if (i == 0) doneToday else emptyMap(),
             )
             views += view
 

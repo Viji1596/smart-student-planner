@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -36,7 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.smartstudent.planner.ui.common.ScreenTitle
 import com.smartstudent.planner.ui.common.WhiteCard
 
-enum class ProfilePage { ROOT, ROUTINE, TIMETABLE, HABITS }
+enum class ProfilePage { ROOT, ROUTINE, TIMETABLE, IMPORT, HABITS, REMINDERS }
 
 @Composable
 fun ProfileScreen(userName: String?, onOpen: (ProfilePage) -> Unit, onSignOut: () -> Unit) {
@@ -74,6 +75,7 @@ fun ProfileScreen(userName: String?, onOpen: (ProfilePage) -> Unit, onSignOut: (
         ProfileRow(Icons.Default.Settings, "Daily routine", "Wake up, bedtime, meals") { onOpen(ProfilePage.ROUTINE) }
         ProfileRow(Icons.Default.DateRange, "Timetable", "Classes and fixed commitments") { onOpen(ProfilePage.TIMETABLE) }
         ProfileRow(Icons.Default.Refresh, "Habits", "Things you repeat every day or week") { onOpen(ProfilePage.HABITS) }
+        ProfileRow(Icons.Default.Notifications, "Reminders", "Notifications before sessions, trips and meals") { onOpen(ProfilePage.REMINDERS) }
 
         Spacer(Modifier.height(8.dp))
         Surface(

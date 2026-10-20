@@ -48,12 +48,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.smartstudent.planner.AppContainer
 import com.smartstudent.planner.domain.BlockKind
 import com.smartstudent.planner.domain.BreakItem
 import com.smartstudent.planner.domain.BusyItem
 import com.smartstudent.planner.domain.FreeItem
+import com.smartstudent.planner.domain.HistoryEntry
+import com.smartstudent.planner.domain.SessionStatus
 import com.smartstudent.planner.domain.Session
 import com.smartstudent.planner.domain.SessionItem
 import com.smartstudent.planner.domain.TimeBlock
@@ -78,9 +82,13 @@ fun HomeScreen(
     onSync: () -> Unit,
     onOpenProfile: () -> Unit,
     onViewAllTasks: () -> Unit,
+    onOpenReminders: () -> Unit,
 ) {
     val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(container))
     val state by viewModel.state.collectAsState()
+    val remindersOn by viewModel.remindersOn.collectAsState()
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResume() }
 
     val current = state
     if (current == null) {
@@ -91,10 +99,15 @@ fun HomeScreen(
             userName = userName,
             onSelectOffset = viewModel::selectOffset,
             onCompleteSession = viewModel::completeSession,
+            onSkipSession = viewModel::skipSession,
+            onMarkMissedDone = viewModel::markMissedDone,
+            onReplan = viewModel::replan,
             onUndoHabit = viewModel::undoHabit,
             onSync = onSync,
             onOpenProfile = onOpenProfile,
             onViewAllTasks = onViewAllTasks,
+            remindersOff = remindersOn == false,
+            onOpenReminders = onOpenReminders,
         )
     }
 }
@@ -104,11 +117,16 @@ private fun HomeContent(
     state: HomeState,
     userName: String?,
     onSelectOffset: (Int) -> Unit,
-    onCompleteSession: (WorkItem, Int) -> Unit,
+    onCompleteSession: (Session) -> Unit,
+    onSkipSession: (Session) -> Unit,
+    onMarkMissedDone: (HistoryEntry) -> Unit,
+    onReplan: () -> Unit,
     onUndoHabit: (String) -> Unit,
     onSync: () -> Unit,
     onOpenProfile: () -> Unit,
     onViewAllTasks: () -> Unit,
+    remindersOff: Boolean,
+    onOpenReminders: () -> Unit,
 ) {
     val view = state.view
     val schedule = view.schedule
@@ -218,6 +236,24 @@ private fun HomeContent(
             }
         }
 
+        // ---- reminders are off: say so (they are off until switched on)
+        if (remindersOff) {
+            item {
+                WhiteCard(Modifier.fillMaxWidth(), onClick = onOpenReminders) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Reminders are off", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Turn them on to get a notification before each session.",
+                                fontSize = 13.sp, color = scheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(onClick = onOpenReminders) { Text("Turn on") }
+                    }
+                }
+            }
+        }
+
         // ---- warnings
         if (schedule.unscheduled.isNotEmpty()) item { UnscheduledCard(schedule.unscheduled) }
         if (view.plan.conflicts.isNotEmpty()) {
@@ -253,10 +289,21 @@ private fun HomeContent(
                     fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = scheme.onBackground,
                     modifier = Modifier.weight(1f),
                 )
+                if (isToday) TextButton(onClick = onReplan) { Text("Re-plan", color = scheme.onBackground) }
                 TextButton(onClick = onViewAllTasks) { Text("View All", color = scheme.onBackground) }
             }
         }
-        if (view.timeline.isEmpty()) {
+        // Sessions whose time is over: shown (not hidden) until they are ticked off or counted as missed.
+        items(state.justEnded) { ended ->
+            SessionCard(
+                session = ended.toSession(),
+                dayLabel = "Time is up",
+                canComplete = true,
+                onDone = { onCompleteSession(ended.toSession()) },
+                onSkip = { onSkipSession(ended.toSession()) },
+            )
+        }
+        if (view.timeline.isEmpty() && state.justEnded.isEmpty()) {
             item { Text("Nothing left for today.", color = scheme.onBackground.copy(alpha = 0.7f)) }
         }
         items(view.timeline) { entry ->
@@ -265,8 +312,9 @@ private fun HomeContent(
                 is SessionItem -> SessionCard(
                     session = entry.session,
                     dayLabel = if (isToday) "Today" else dayShortName(state.date.dayOfWeek.value),
-                    canComplete = isToday,
-                    onDone = { onCompleteSession(entry.session.item, entry.session.duration) },
+                    canComplete = isToday && entry.session.plannedId != null,
+                    onDone = { onCompleteSession(entry.session) },
+                    onSkip = { onSkipSession(entry.session) },
                 )
                 is BreakItem -> Text(
                     "${TimeUtil.format(entry.startMin)} – ${TimeUtil.format(entry.endMin)}  ·  " +
@@ -283,6 +331,41 @@ private fun HomeContent(
                     color = scheme.onBackground.copy(alpha = 0.6f),
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
+            }
+        }
+
+        // ---- earlier today: finished and missed sessions
+        if (state.earlier.isNotEmpty()) {
+            item {
+                Text(
+                    "Earlier today", fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                    color = scheme.onBackground, modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+            items(state.earlier) { past ->
+                WhiteCard(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(past.title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                            val label = if (past.status == SessionStatus.DONE) {
+                                if (past.count > 1) "Done · ${past.count} sessions" else "Done"
+                            } else {
+                                if (past.count > 1) "Missed ${past.count} times" else "Missed"
+                            }
+                            Text(
+                                "${TimeUtil.format(past.startMin)} – ${TimeUtil.format(past.endMin)}  ·  $label",
+                                fontSize = 13.sp,
+                                color = if (past.status == SessionStatus.DONE) scheme.onSurfaceVariant else scheme.error,
+                            )
+                        }
+                        if (past.status == SessionStatus.MISSED) {
+                            TextButton(onClick = { onMarkMissedDone(past) }) { Text("I did it") }
+                        }
+                    }
+                }
             }
         }
 
@@ -307,7 +390,13 @@ private fun HomeContent(
 }
 
 @Composable
-private fun SessionCard(session: Session, dayLabel: String, canComplete: Boolean, onDone: () -> Unit) {
+private fun SessionCard(
+    session: Session,
+    dayLabel: String,
+    canComplete: Boolean,
+    onDone: () -> Unit,
+    onSkip: () -> Unit,
+) {
     val item = session.item
     val scheme = MaterialTheme.colorScheme
     WhiteCard(Modifier.fillMaxWidth()) {
@@ -324,9 +413,10 @@ private fun SessionCard(session: Session, dayLabel: String, canComplete: Boolean
                     fontSize = 14.sp, color = scheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(14.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Pill(dayLabel, dark = true)
                     Pill(TimeUtil.formatDuration(session.duration))
+                    if (canComplete) TextButton(onClick = onSkip) { Text("Later") }
                 }
             }
             if (canComplete) {

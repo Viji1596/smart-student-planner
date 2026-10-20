@@ -41,7 +41,13 @@ data class WorkItem(
     val divisible: Boolean,
 )
 
-data class Session(val startMin: Int, val endMin: Int, val item: WorkItem) {
+data class Session(
+    val startMin: Int,
+    val endMin: Int,
+    val item: WorkItem,
+    /** Set when this session comes from the committed plan for today. */
+    val plannedId: String? = null,
+) {
     val duration: Int get() = endMin - startMin
 }
 

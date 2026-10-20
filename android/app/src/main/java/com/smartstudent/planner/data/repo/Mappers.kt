@@ -2,6 +2,7 @@ package com.smartstudent.planner.data.repo
 
 import com.smartstudent.planner.data.local.HabitCompletionEntity
 import com.smartstudent.planner.data.local.HabitEntity
+import com.smartstudent.planner.data.local.PlannedSessionEntity
 import com.smartstudent.planner.data.local.SettingsEntity
 import com.smartstudent.planner.data.local.TaskEntity
 import com.smartstudent.planner.data.local.TimetableEntryEntity
@@ -13,6 +14,10 @@ import com.smartstudent.planner.domain.FixedEntry
 import com.smartstudent.planner.domain.HabitInfo
 import com.smartstudent.planner.domain.HabitKind
 import com.smartstudent.planner.domain.MealSlot
+import com.smartstudent.planner.domain.PlannedSession
+import com.smartstudent.planner.domain.Priority
+import com.smartstudent.planner.domain.SessionStatus
+import com.smartstudent.planner.domain.WorkKind
 import com.smartstudent.planner.domain.RestSlot
 import com.smartstudent.planner.domain.TaskInfo
 import com.smartstudent.planner.domain.TimeUtil
@@ -112,3 +117,30 @@ fun List<HabitCompletionEntity>.toDoneDates(): Map<String, Set<LocalDate>> =
     mapNotNull { c -> runCatching { LocalDate.parse(c.date) }.getOrNull()?.let { c.habitId to it } }
         .groupBy({ it.first }, { it.second })
         .mapValues { it.value.toSet() }
+
+/** Rows that can't be read (e.g. from a future version) are skipped rather than crashing. */
+fun PlannedSessionEntity.toDomainOrNull(): PlannedSession? = runCatching {
+    PlannedSession(
+        id = id,
+        date = LocalDate.parse(date),
+        startMin = startMin,
+        endMin = endMin,
+        kind = WorkKind.valueOf(kind),
+        refId = refId,
+        title = title,
+        priority = Priority.parse(priority),
+        status = SessionStatus.valueOf(status),
+    )
+}.getOrNull()
+
+fun PlannedSession.toEntity() = PlannedSessionEntity(
+    id = id,
+    date = date.toString(),
+    startMin = startMin,
+    endMin = endMin,
+    kind = kind.name,
+    refId = refId,
+    title = title,
+    priority = priority.name,
+    status = status.name,
+)

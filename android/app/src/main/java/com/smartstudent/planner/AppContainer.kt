@@ -3,9 +3,11 @@ package com.smartstudent.planner
 import android.content.Context
 import androidx.room.Room
 import com.smartstudent.planner.data.local.AppDatabase
+import com.smartstudent.planner.data.ocr.OcrReader
 import com.smartstudent.planner.data.local.MIGRATION_1_2
 import com.smartstudent.planner.data.local.MIGRATION_2_3
 import com.smartstudent.planner.data.local.MIGRATION_3_4
+import com.smartstudent.planner.data.local.MIGRATION_4_5
 import com.smartstudent.planner.data.remote.AuthInterceptor
 import com.smartstudent.planner.data.remote.PlannerApi
 import com.smartstudent.planner.data.remote.TokenAuthenticator
@@ -16,6 +18,12 @@ import com.smartstudent.planner.data.repo.SettingsRepository
 import com.smartstudent.planner.data.repo.SyncManager
 import com.smartstudent.planner.data.repo.TaskRepository
 import com.smartstudent.planner.data.repo.TimetableRepository
+import com.smartstudent.planner.reminders.PlanManager
+import com.smartstudent.planner.reminders.ReminderScheduler
+import com.smartstudent.planner.reminders.ReminderStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -30,7 +38,7 @@ class AppContainer(context: Context) {
     val tokenStore = TokenStore(appContext)
 
     private val database = Room.databaseBuilder(appContext, AppDatabase::class.java, "planner.db")
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
         .build()
 
     private val json = Json {
@@ -75,5 +83,28 @@ class AppContainer(context: Context) {
 
     val syncManager = SyncManager(
         tokenStore, taskRepository, timetableRepository, settingsRepository, habitRepository,
+    )
+
+    // Reads timetables from photos and PDFs on the phone
+    val ocrReader = OcrReader(appContext)
+
+    // ---- reminders and today's committed plan
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    val plannedSessionDao = database.plannedSessionDao()
+    val reminderStore = ReminderStore(appContext)
+    val reminderScheduler = ReminderScheduler(appContext, reminderStore)
+
+    val planManager = PlanManager(
+        appContext = appContext,
+        tokenStore = tokenStore,
+        settings = settingsRepository,
+        timetable = timetableRepository,
+        tasks = taskRepository,
+        habits = habitRepository,
+        sessionDao = plannedSessionDao,
+        store = reminderStore,
+        scheduler = reminderScheduler,
+        scope = appScope,
     )
 }

@@ -4,12 +4,21 @@ import android.content.Context
 import android.util.Log
 import com.smartstudent.planner.data.local.TimetableDao
 import com.smartstudent.planner.data.local.TimetableEntryEntity
+import com.smartstudent.planner.data.ocr.OcrBox
+import com.smartstudent.planner.data.remote.BoxDto
+import com.smartstudent.planner.data.remote.ImportPagesRequest
+import com.smartstudent.planner.data.remote.PageDto
+import com.smartstudent.planner.data.remote.ImportRequest
+import com.smartstudent.planner.data.remote.ImportResponse
 import com.smartstudent.planner.data.remote.PlannerApi
 import com.smartstudent.planner.data.remote.TimetableEntryDto
 import com.smartstudent.planner.data.remote.TimetableUpsertRequest
 import com.smartstudent.planner.data.remote.TokenStore
+import com.smartstudent.planner.domain.ImportedClass
+import com.smartstudent.planner.domain.TimetableImport
 import com.smartstudent.planner.sync.SyncScheduler
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import retrofit2.HttpException
 import java.util.UUID
 
@@ -52,6 +61,61 @@ class TimetableRepository(
             )
         )
         SyncScheduler.syncSoon(appContext)
+    }
+
+    /** Sends a file to the server and gets back a preview of the classes it contains. Nothing is saved. */
+    suspend fun readFile(filename: String, base64: String): ImportResponse =
+        api.importTimetable(ImportRequest(filename, base64))
+
+    /** Sends the words the phone recognised in a photo or scanned PDF; the server builds the table from them. */
+    suspend fun readPages(pages: List<List<OcrBox>>): ImportResponse =
+        api.importPages(
+            ImportPagesRequest(
+                pages.map { page ->
+                    PageDto(
+                        page.filter { it.text.isNotBlank() }.take(4000).map {
+                            BoxDto(it.text.take(200), it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat())
+                        }
+                    )
+                }
+            )
+        )
+
+    /** Is the server's AI reader set up? (The app only uses it for photos and PDFs.) */
+    suspend fun aiReaderAvailable(): Boolean = api.importStatus().ai
+
+    suspend fun currentClasses(): List<ImportedClass> =
+        entries.first().map { ImportedClass(it.dayOfWeek, it.title, it.startTime, it.endTime) }
+
+    /**
+     * Saves imported classes. [replace] first removes the whole current timetable; otherwise only
+     * classes that aren't already there are added. Returns how many classes were added.
+     */
+    suspend fun importClasses(classes: List<ImportedClass>, replace: Boolean): Int {
+        val now = System.currentTimeMillis()
+        val current = entries.first()
+        if (replace) {
+            current.forEach { dao.upsert(it.copy(deleted = true, dirty = true, updatedAtLocal = now)) }
+        }
+        val existing = if (replace) emptyList()
+        else current.map { ImportedClass(it.dayOfWeek, it.title, it.startTime, it.endTime) }
+        val toAdd = TimetableImport.newClasses(existing, classes.filter(TimetableImport::isValid))
+        dao.upsertAll(
+            toAdd.map {
+                TimetableEntryEntity(
+                    id = UUID.randomUUID().toString(),
+                    dayOfWeek = it.day,
+                    title = it.title.trim().take(100),
+                    startTime = it.start,
+                    endTime = it.end,
+                    deleted = false,
+                    dirty = true,
+                    updatedAtLocal = now,
+                )
+            }
+        )
+        SyncScheduler.syncSoon(appContext)
+        return toAdd.size
     }
 
     suspend fun delete(entry: TimetableEntryEntity) {

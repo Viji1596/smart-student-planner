@@ -12,8 +12,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SettingsEntity::class,
         HabitEntity::class,
         HabitCompletionEntity::class,
+        PlannedSessionEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -22,6 +23,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun settingsDao(): SettingsDao
     abstract fun habitDao(): HabitDao
     abstract fun habitCompletionDao(): HabitCompletionDao
+    abstract fun plannedSessionDao(): PlannedSessionDao
 }
 
 /** Phase 1 -> phase 2: adds the timetable and settings tables. Keeps existing tasks. */
@@ -101,5 +103,24 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         db.execSQL("ALTER TABLE `settings` ADD COLUMN `breakMinutes` INTEGER NOT NULL DEFAULT 10")
         db.execSQL("ALTER TABLE `settings` ADD COLUMN `longBreakAfterMinutes` INTEGER NOT NULL DEFAULT 120")
         db.execSQL("ALTER TABLE `settings` ADD COLUMN `longBreakMinutes` INTEGER NOT NULL DEFAULT 20")
+    }
+}
+
+/** Phase 3c -> phase 4: today's committed plan. Keeps existing data. */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `planned_sessions` (" +
+                "`id` TEXT NOT NULL, " +
+                "`date` TEXT NOT NULL, " +
+                "`startMin` INTEGER NOT NULL, " +
+                "`endMin` INTEGER NOT NULL, " +
+                "`kind` TEXT NOT NULL, " +
+                "`refId` TEXT NOT NULL, " +
+                "`title` TEXT NOT NULL, " +
+                "`priority` TEXT NOT NULL, " +
+                "`status` TEXT NOT NULL, " +
+                "PRIMARY KEY(`id`))"
+        )
     }
 }

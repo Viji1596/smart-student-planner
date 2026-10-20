@@ -59,6 +59,7 @@ private sealed interface DialogState {
 fun TimetableScreen(
     container: AppContainer,
     onBack: () -> Unit,
+    onImport: () -> Unit,
     addRequested: Boolean,
     onAddConsumed: () -> Unit,
 ) {
@@ -84,7 +85,10 @@ fun TimetableScreen(
             ScreenTitle(
                 title = "Timetable",
                 onBack = onBack,
-                trailing = { RoundIconButton(Icons.Default.Add, "Add class", { dialog = DialogState.Adding }) },
+                trailing = {
+                    TextButton(onClick = onImport) { Text("Import", color = scheme.onBackground) }
+                    RoundIconButton(Icons.Default.Add, "Add class", { dialog = DialogState.Adding })
+                },
             )
         }
         item {
@@ -150,7 +154,7 @@ fun TimetableScreen(
 }
 
 @Composable
-private fun EntryDialog(
+internal fun EntryDialog(
     initial: TimetableEntryEntity?,
     defaultDay: Int,
     onDismiss: () -> Unit,

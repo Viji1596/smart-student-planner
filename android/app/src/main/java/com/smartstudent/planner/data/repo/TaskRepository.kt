@@ -44,6 +44,27 @@ class TaskRepository(
         SyncScheduler.syncSoon(appContext)
     }
 
+    /**
+     * Change a task after it was added. Progress already made is kept; if the new duration is no
+     * bigger than what was already done, the task counts as finished.
+     */
+    suspend fun update(task: TaskEntity, title: String, priority: String, minutes: Int, dueDate: Long?) {
+        val spent = minOf(task.spentMinutes, minutes)
+        dao.upsert(
+            task.copy(
+                title = title.trim(),
+                priority = priority,
+                estimatedMinutes = minutes,
+                dueDate = dueDate,
+                spentMinutes = spent,
+                completed = task.completed || spent >= minutes,
+                dirty = true,
+                updatedAtLocal = System.currentTimeMillis(),
+            )
+        )
+        SyncScheduler.syncSoon(appContext)
+    }
+
     suspend fun setCompleted(task: TaskEntity, completed: Boolean) {
         // Finishing a task means all of it is done; un-finishing keeps the progress made so far.
         val spent = if (completed) task.estimatedMinutes else minOf(task.spentMinutes, task.estimatedMinutes - 1)
