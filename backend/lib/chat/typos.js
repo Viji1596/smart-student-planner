@@ -14,6 +14,7 @@ const ALIASES = {
   wensday: "wednesday", wednsday: "wednesday", wendsday: "wednesday", wed: "wed",
   thrusday: "thursday", thursay: "thursday", thurday: "thursday",
   satday: "saturday", sundy: "sunday", mondy: "monday", tuesady: "tuesday", tueday: "tuesday",
+  focs: "focus", foucs: "focus", focuss: "focus", fokus: "focus", focusing: "focusing", priorty: "priority", prioirty: "priority", priotity: "priority",
   evning: "evening", eveing: "evening", mornin: "morning", nxt: "next", nex: "next",
 };
 

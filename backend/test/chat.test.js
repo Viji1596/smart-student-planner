@@ -371,7 +371,7 @@ test.describe("the endpoint accepts the graded report", () => {
   test("'how is my day going' asks for today's report", async () => {
     const body = await (await post("g4", say("how is my day going", graded))).json();
     assert.deepEqual([body.actions[0].type, body.actions[0].args.days], ["show_report", 1]);
-    assert.equal(body.version, "6.5");
+    assert.equal(body.version, "6.6");
   });
 });
 

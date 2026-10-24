@@ -224,7 +224,8 @@ object DayBuilder {
         val doneHabits = habits.filter { completions[it.id]?.contains(date) == true }
 
         val busy = plan.blocks
-            .filter { it.kind != BlockKind.FREE && (nowMin == null || it.endMin > nowMin) }
+            // travel time stays blocked (no work is planned in it) but is not shown as a slot of its own
+            .filter { it.kind != BlockKind.FREE && it.kind != BlockKind.TRAVEL && (nowMin == null || it.endMin > nowMin) }
             .map { BusyItem(it) }
         val timeline: List<TimelineItem> =
             (busy + schedule.sessions.map { SessionItem(it) } + schedule.leftoverFree.map { FreeItem(it) } +

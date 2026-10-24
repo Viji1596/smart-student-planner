@@ -15,7 +15,6 @@ data class ReminderSettings(
     val endLeadMin: Int = 5,
     /** A reminder at the moment a session ends ("Time's up"). */
     val atEnd: Boolean = true,
-    val travel: Boolean = true,
     val mealsAndRest: Boolean = false,
     val morningSummary: Boolean = true,
     /** At bedtime: how many tasks were finished today. */
@@ -26,7 +25,7 @@ data class ReminderSettings(
     val monthSummary: Boolean = true,
 )
 
-enum class ReminderKind { SESSION, SESSION_ENDING, SESSION_END, TRAVEL, MEAL_REST, MORNING }
+enum class ReminderKind { SESSION, SESSION_ENDING, SESSION_END, MEAL_REST, MORNING }
 
 data class Reminder(
     val date: LocalDate,
@@ -112,21 +111,6 @@ object ReminderPlanner {
             }
         }
 
-        if (settings.travel) {
-            for (b in plan.blocks.filter { it.kind == BlockKind.TRAVEL }) {
-                val at = b.startMin - lead
-                if (at <= nowMin) continue
-                out += Reminder(
-                    date = today,
-                    minute = at,
-                    kind = ReminderKind.TRAVEL,
-                    title = if (lead > 0) "Time to leave in $lead min" else "Time to leave",
-                    text = "${b.label} · ${TimeUtil.formatDuration(b.duration)}",
-                    key = "$today|T|${b.startMin}",
-                )
-            }
-        }
-
         if (settings.mealsAndRest) {
             for (b in plan.blocks.filter { it.kind == BlockKind.MEAL || it.kind == BlockKind.REST }) {
                 val at = b.startMin - lead
@@ -197,7 +181,7 @@ fun DayBuilder.buildWithCommitted(
     )
     val schedule = SchedulePlan(upcoming, live.schedule.unscheduled, layout.leftoverFree, layout.breaks)
 
-    val busy = live.plan.blocks.filter { it.kind != BlockKind.FREE && it.endMin > nowMin }.map { BusyItem(it) }
+    val busy = live.plan.blocks.filter { it.kind != BlockKind.FREE && it.kind != BlockKind.TRAVEL && it.endMin > nowMin }.map { BusyItem(it) }
     val timeline: List<TimelineItem> =
         (busy + upcoming.map { SessionItem(it) } + layout.leftoverFree.map { FreeItem(it) } +
             layout.breaks.map { BreakItem(it) })

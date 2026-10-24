@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -194,6 +195,17 @@ fun AppShell(container: AppContainer) {
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        // adding things: a floating button where it makes sense (the other tabs have nothing to add)
+        floatingActionButton = {
+            if (tab == Tab.HOME || tab == Tab.TASKS) {
+                FloatingActionButton(
+                    onClick = { showAddMenu = true },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = CircleShape,
+                ) { Icon(Icons.Default.Add, "Add") }
+            }
+        },
         bottomBar = {
             PlannerBottomBar(
                 selected = tab,
@@ -201,7 +213,6 @@ fun AppShell(container: AppContainer) {
                     tab = it
                     if (it == Tab.PROFILE) profilePage = ProfilePage.ROOT
                 },
-                onAdd = { showAddMenu = true },
             )
         },
         snackbarHost = { SnackbarHost(snackbarHost) },
@@ -327,30 +338,18 @@ private fun AddMenuRow(icon: ImageVector, title: String, subtitle: String, onCli
 
 /** Home, Tasks, a round "+" in the middle, Progress, Profile. */
 @Composable
-private fun PlannerBottomBar(selected: Tab, onSelect: (Tab) -> Unit, onAdd: () -> Unit) {
+private fun PlannerBottomBar(selected: Tab, onSelect: (Tab) -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-        shadowElevation = 10.dp,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        shadowElevation = 8.dp,
     ) {
         Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 6.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BarItem(Tab.HOME, selected, onSelect, Modifier.weight(1f)) { tint -> Icon(Icons.Default.Home, null, tint = tint) }
             BarItem(Tab.TASKS, selected, onSelect, Modifier.weight(1f)) { tint -> Icon(Icons.Default.Check, null, tint = tint) }
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Surface(
-                    onClick = onAdd,
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(56.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Add, "Add", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                }
-            }
             BarItem(Tab.ASSISTANT, selected, onSelect, Modifier.weight(1f)) { tint -> Icon(Icons.Default.Face, null, tint = tint) }
             BarItem(Tab.PROGRESS, selected, onSelect, Modifier.weight(1f)) { tint -> BarsIcon(tint) }
             BarItem(Tab.PROFILE, selected, onSelect, Modifier.weight(1f)) { tint -> Icon(Icons.Default.Person, null, tint = tint) }
@@ -358,6 +357,7 @@ private fun PlannerBottomBar(selected: Tab, onSelect: (Tab) -> Unit, onAdd: () -
     }
 }
 
+/** One tab: the icon on a soft pill when selected, the name underneath. Equal width, so five fit without crowding. */
 @Composable
 private fun BarItem(
     tab: Tab,
@@ -368,14 +368,21 @@ private fun BarItem(
 ) {
     val scheme = MaterialTheme.colorScheme
     val active = tab == selected
-    val tint = if (active) scheme.primary else scheme.onSurfaceVariant
+    val tint = if (active) scheme.onPrimaryContainer else scheme.onSurfaceVariant
     Column(
-        modifier.clip(RoundedCornerShape(16.dp)).clickable { onSelect(tab) }.padding(vertical = 4.dp),
+        modifier.clip(RoundedCornerShape(16.dp)).clickable { onSelect(tab) }.padding(vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        icon(tint)
-        Text(tab.label, fontSize = 11.sp, color = tint, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
-        Spacer(Modifier.height(3.dp))
-        Box(Modifier.size(4.dp).clip(CircleShape).background(if (active) scheme.primary else scheme.surface))
+        Box(
+            Modifier.height(30.dp).width(56.dp).clip(CircleShape)
+                .background(if (active) scheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent),
+            contentAlignment = Alignment.Center,
+        ) { icon(tint) }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            tab.label, fontSize = 11.sp, maxLines = 1,
+            color = if (active) scheme.onSurface else scheme.onSurfaceVariant,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+        )
     }
 }

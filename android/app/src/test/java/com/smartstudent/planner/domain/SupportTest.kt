@@ -495,4 +495,26 @@ class SupportTest {
         assertFalse(ServerVersion.isOlder("7", "6.5"))
         assertTrue(ServerVersion.isOlder("6", "6.5"))
     }
+
+    @Test
+    fun whatToFocusOnIsUnderstoodInManyWords() {
+        val phrases = listOf(
+            "what to focus on", "What to focus on?", "what do i focus on", "what should i be focusing on", "focus", "what to do",
+            "what to do now", "what should i do today", "what do i do now", "what can i do now", "what do i work on",
+            "where to start", "where do i begin", "which task first", "which one should i start with", "what's my priority",
+            "what are my priorities", "priorities", "most urgent", "what's urgent", "tell me what to do", "suggest what to do",
+            "what do i do next", "i don't know what to do", "i dont know where to start", "what's first", "start with what",
+            "give me something to do", "what's on my plate", "what needs my attention", "what to start with", "what to study",
+            "what do i need to do first", "help me focus", "help me prioritise", "what first", "what next", "what now",
+        )
+        for (t in phrases) assertEquals(t, LocalAction("show_focus"), LocalQuestions.detect(t))
+    }
+
+    @Test
+    fun focusIsNotTakenForCommandsStatementsOrOtherDays() {
+        for (t in listOf(
+            "add task focus on dsa due friday", "can you please add a low priority task clean desk", "mark priorities done",
+            "delete the priorities task", "i can't focus", "my priority is physics", "what should i do tomorrow", "what to do on friday",
+        )) assertTrue(t, LocalQuestions.detect(t)?.type != "show_focus")
+    }
 }

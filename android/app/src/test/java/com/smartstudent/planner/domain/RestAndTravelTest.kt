@@ -244,4 +244,103 @@ class RestAndTravelTest {
         assertTrue(view.timeline.any { it is BreakItem })
         assertEquals(view.timeline.sortedWith(compareBy({ it.startMin }, { it.endMin })), view.timeline)
     }
+
+    // ---------------------------------------------- travel around meals, and travel is not a slot
+
+    private fun lunchRules(commuteTo: Int = 40, commuteFrom: Int = 40, early: Int = 10) = DayRules(
+        wakeMin = t("06:30"), sleepMin = t("23:00"), morningRoutineMin = 45,
+        meals = listOf(MealSlot("Breakfast", t("07:30"), 30), MealSlot("Lunch", t("13:00"), 40), MealSlot("Dinner", t("19:30"), 45)),
+        commute = Commute(commuteTo, commuteFrom, early),
+    )
+
+    @Test
+    fun classesAfterLunch_theTripToCollegeMovesBeforeLunch() {
+        // class at 14:00: the trip would be 13:10-13:50 (through lunch at 13:00-13:40); it moves to end when lunch starts
+        val plan = DayPlanner.plan(lunchRules(), listOf(FixedEntry("Physics", t("14:00"), t("15:00"))))
+        val trip = plan.blocks.single { it.label == "Travel to college" }
+        assertEquals("12:20", hm(trip.startMin))
+        assertEquals("13:00", hm(trip.endMin))
+        assertTrue("no overlaps: ${plan.conflicts}", plan.conflicts.isEmpty())
+    }
+
+    @Test
+    fun classesBeforeLunch_theTripStaysRightBeforeTheClass() {
+        val plan = DayPlanner.plan(lunchRules(), listOf(FixedEntry("Physics", t("10:00"), t("11:00"))))
+        val trip = plan.blocks.single { it.label == "Travel to college" }
+        assertEquals("09:10", hm(trip.startMin))
+        assertEquals("09:50", hm(trip.endMin))
+    }
+
+    @Test
+    fun aTripThatOnlyTouchesTheMealIsNotMoved() {
+        // class 14:20, 40 minutes of travel: 13:40-14:20 starts exactly when lunch ends, so it is left alone
+        val plan = DayPlanner.plan(lunchRules(early = 0), listOf(FixedEntry("Physics", t("14:20"), t("15:20"))))
+        val trip = plan.blocks.single { it.label == "Travel to college" }
+        assertEquals("13:40", hm(trip.startMin))
+        assertEquals("14:20", hm(trip.endMin))
+    }
+
+    @Test
+    fun theTripHomeStartsAfterAMealItWouldRunInto() {
+        // class ends 19:00, the trip home would be 19:00-19:40, dinner is 19:30-20:15: the trip starts after dinner
+        val plan = DayPlanner.plan(lunchRules(), listOf(FixedEntry("Lab", t("17:00"), t("19:00"))))
+        val trip = plan.blocks.single { it.label == "Travel home" }
+        assertEquals("20:15", hm(trip.startMin))
+        assertTrue(plan.conflicts.isEmpty())
+    }
+
+    @Test
+    fun theTripHomeRightAfterClassIsUnchangedWhenNoMealIsInTheWay() {
+        val plan = DayPlanner.plan(lunchRules(), listOf(FixedEntry("Physics", t("10:00"), t("11:00"))))
+        assertEquals("11:00", hm(plan.blocks.single { it.label == "Travel home" }.startMin))
+    }
+
+    @Test
+    fun aMovedTripStillBlocksTheTime_noWorkIsPlannedInIt() {
+        val plan = DayPlanner.plan(lunchRules(), listOf(FixedEntry("Physics", t("14:00"), t("15:00"))))
+        assertTrue(plan.freeBlocks.none { it.startMin < t("13:00") && it.endMin > t("12:20") })
+    }
+
+    @Test
+    fun travelIsBlockedButNotShownAsASlotOnTheTimeline() {
+        val rules = lunchRules()
+        val entries = listOf(FixedEntry("Physics", t("14:00"), t("15:00")))
+        val view = DayBuilder.build(rules, entries, emptyList(), emptyList(), emptyMap(), java.time.LocalDate.of(2026, 10, 26), null)
+        assertTrue(view.plan.blocks.any { it.kind == BlockKind.TRAVEL })
+        assertTrue(view.timeline.none { it is BusyItem && it.block.kind == BlockKind.TRAVEL })
+        assertTrue(view.timeline.any { it is BusyItem && it.block.kind == BlockKind.CLASS })
+    }
+
+    @Test
+    fun aRestThatWouldSitOnADinnerStartsWhenDinnerEnds() {
+        val rules = DayRules(
+            wakeMin = t("07:00"), sleepMin = t("23:00"), morningRoutineMin = 30,
+            meals = listOf(MealSlot("Dinner", t("18:30"), 60)), rest = RestSlot(t("18:30"), 30),
+        )
+        val plan = DayPlanner.plan(rules, emptyList())
+        assertEquals("19:30", hm(plan.blocks.single { it.kind == BlockKind.REST }.startMin))
+        assertTrue(plan.conflicts.isEmpty())
+    }
+
+    @Test
+    fun aRestThatDoesNotTouchAMealStaysWhereItIs() {
+        val rules = DayRules(
+            wakeMin = t("07:00"), sleepMin = t("23:00"), morningRoutineMin = 30,
+            meals = listOf(MealSlot("Dinner", t("19:30"), 60)), rest = RestSlot(t("16:00"), 30),
+        )
+        assertEquals("16:00", hm(DayPlanner.plan(rules, emptyList()).blocks.single { it.kind == BlockKind.REST }.startMin))
+    }
+
+    @Test
+    fun aTripIsNotMovedIntoTheMorningRoutineToAvoidBreakfast_theOverlapIsReportedInstead() {
+        // wake 07:00 + 60 min routine = 08:00; class 09:00; trip 08:05-09:00 overlaps a 08:30 breakfast.
+        // Moving it before breakfast would put it at 07:35, inside the routine: so it stays, and the clash is shown.
+        val rules = DayRules(
+            wakeMin = t("07:00"), sleepMin = t("23:00"), morningRoutineMin = 60,
+            meals = listOf(MealSlot("Breakfast", t("08:30"), 30)), commute = Commute(55, 0, 0),
+        )
+        val plan = DayPlanner.plan(rules, listOf(FixedEntry("Physics", t("09:00"), t("10:00"))))
+        assertEquals("08:05", hm(plan.blocks.single { it.label == "Travel to college" }.startMin))
+        assertTrue(plan.conflicts.any { "Breakfast" in listOf(it.first, it.second) })
+    }
 }

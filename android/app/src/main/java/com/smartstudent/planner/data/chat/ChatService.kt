@@ -232,7 +232,7 @@ class ChatService(
         ChatSessionDto(id, title, kind, refId, TimeUtil.format(start), TimeUtil.format(end), "PLANNED")
 
     private fun dayDto(view: DayView, sessions: List<ChatSessionDto>): ChatDayDto {
-        val busy = view.plan.blocks.filter { it.kind != BlockKind.FREE }
+        val busy = view.plan.blocks.filter { it.kind != BlockKind.FREE && it.kind != BlockKind.TRAVEL }
             .map { ChatSpanDto(it.label, TimeUtil.format(it.startMin), TimeUtil.format(it.endMin), it.kind.name) }
         val freeBlocks = view.schedule.leftoverFree
         return ChatDayDto(

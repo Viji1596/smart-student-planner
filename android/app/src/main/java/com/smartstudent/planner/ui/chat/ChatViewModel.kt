@@ -186,7 +186,7 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
 
     companion object {
         /** The backend version this app is built for. An older backend is pointed out in the chat. */
-        const val EXPECTED_SERVER = "6.5"
+        const val EXPECTED_SERVER = "6.6"
 
         private const val GREETING =
             "Hi! I'm your planner assistant. Ask about your plan, tell me what to add or change, ask how you're doing, " +

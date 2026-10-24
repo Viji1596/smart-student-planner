@@ -91,6 +91,12 @@ object DayPlanner {
         rules.rest?.takeIf { it.durationMin > 0 }?.let { rest ->
             var start = rest.startMin
             if (start < windowStart && start + MINUTES_PER_DAY < windowEnd) start += MINUTES_PER_DAY
+            // A rest that would sit on top of a meal starts when the meal ends.
+            val meals = busy.filter { it.kind == BlockKind.MEAL }
+            repeat(meals.size + 1) {
+                meals.filter { it.startMin < start + rest.durationMin && start < it.endMin }
+                    .maxByOrNull { it.endMin }?.let { start = it.endMin }
+            }
             busy += TimeBlock(start, start + rest.durationMin, "Rest", BlockKind.REST)
         }
         for (entry in entries) {
@@ -102,12 +108,29 @@ object DayPlanner {
             val commute = rules.commute
             val firstStart = entries.minOf { it.startMin }
             val lastEnd = entries.maxOf { it.endMin }
+            // Meals are never travelled through. When classes start after lunch, the trip to college would run
+            // into lunch, so it is moved earlier: you arrive first and eat at college. Likewise a trip home that
+            // would run into a meal starts after it.
+            val meals = busy.filter { it.kind == BlockKind.MEAL }
             if (commute.toMin > 0) {
-                val leave = firstStart - commute.arriveEarlyMin
-                busy += TimeBlock(leave - commute.toMin, leave, "Travel to college", BlockKind.TRAVEL)
+                var arrive = firstStart - commute.arriveEarlyMin
+                // ...but never so early that it runs into the morning routine: then the overlap is reported instead.
+                val earliestLeave = windowStart + rules.morningRoutineMin
+                repeat(meals.size + 1) {
+                    meals.filter { it.startMin < arrive && arrive - commute.toMin < it.endMin }
+                        .minByOrNull { it.startMin }
+                        ?.takeIf { it.startMin - commute.toMin >= earliestLeave }
+                        ?.let { arrive = it.startMin }
+                }
+                busy += TimeBlock(arrive - commute.toMin, arrive, "Travel to college", BlockKind.TRAVEL)
             }
             if (commute.fromMin > 0) {
-                busy += TimeBlock(lastEnd, lastEnd + commute.fromMin, "Travel home", BlockKind.TRAVEL)
+                var leave = lastEnd
+                repeat(meals.size + 1) {
+                    meals.filter { it.startMin < leave + commute.fromMin && leave < it.endMin }
+                        .maxByOrNull { it.endMin }?.let { leave = it.endMin }
+                }
+                busy += TimeBlock(leave, leave + commute.fromMin, "Travel home", BlockKind.TRAVEL)
             }
         }
 

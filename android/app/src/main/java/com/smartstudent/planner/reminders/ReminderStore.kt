@@ -39,7 +39,6 @@ class ReminderStore(private val context: Context) {
         val ENDING = booleanPreferencesKey("ending_soon")
         val END_LEAD = intPreferencesKey("end_lead_min")
         val AT_END = booleanPreferencesKey("at_end")
-        val TRAVEL = booleanPreferencesKey("travel")
         val MEALS = booleanPreferencesKey("meals_and_rest")
         val MORNING = booleanPreferencesKey("morning_summary")
         val DAY_SUMMARY = booleanPreferencesKey("day_summary")
@@ -63,7 +62,6 @@ class ReminderStore(private val context: Context) {
             endingSoon = this[K.ENDING] ?: d.endingSoon,
             endLeadMin = this[K.END_LEAD] ?: d.endLeadMin,
             atEnd = this[K.AT_END] ?: d.atEnd,
-            travel = this[K.TRAVEL] ?: d.travel,
             mealsAndRest = this[K.MEALS] ?: d.mealsAndRest,
             morningSummary = this[K.MORNING] ?: d.morningSummary,
             daySummary = this[K.DAY_SUMMARY] ?: d.daySummary,
@@ -85,7 +83,6 @@ class ReminderStore(private val context: Context) {
             prefs[K.ENDING] = s.endingSoon
             prefs[K.END_LEAD] = s.endLeadMin
             prefs[K.AT_END] = s.atEnd
-            prefs[K.TRAVEL] = s.travel
             prefs[K.MEALS] = s.mealsAndRest
             prefs[K.MORNING] = s.morningSummary
             prefs[K.DAY_SUMMARY] = s.daySummary

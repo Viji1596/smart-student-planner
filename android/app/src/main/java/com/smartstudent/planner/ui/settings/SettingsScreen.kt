@@ -131,8 +131,9 @@ private fun SettingsForm(saved: SettingsEntity, onSave: (SettingsEntity) -> Unit
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Travel", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Added on days you have classes: before the first one and after the last one. " +
-                        "Walking to the hostel, a bus ride, a train... set the way there and the way back " +
+                    "On days you have classes, no work is planned while you travel: before the first class and " +
+                        "after the last one. It isn't shown as a slot and there is no reminder for it. If the trip " +
+                        "would run into a meal, it moves to before the meal. Set the way there and the way back " +
                         "separately. Leave both at 0 if you don't travel.",
                     fontSize = 13.sp,
                     color = scheme.onSurfaceVariant,

@@ -55,7 +55,6 @@ class RemindersViewModel(
     fun setEndingSoon(value: Boolean) = update { it.copy(endingSoon = value) }
     fun setEndLead(value: Int) = update { it.copy(endLeadMin = value.coerceIn(0, 60)) }
     fun setAtEnd(value: Boolean) = update { it.copy(atEnd = value) }
-    fun setTravel(value: Boolean) = update { it.copy(travel = value) }
     fun setMealsAndRest(value: Boolean) = update { it.copy(mealsAndRest = value) }
     fun setMorningSummary(value: Boolean) = update { it.copy(morningSummary = value) }
     fun setDaySummary(value: Boolean) = update { it.copy(daySummary = value) }

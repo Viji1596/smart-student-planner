@@ -22,7 +22,7 @@ class ReminderPlannerTest {
     private fun session(id: String, start: String, end: String, status: SessionStatus = SessionStatus.PLANNED) =
         PlannedSession("$today|TASK|$id|${t(start)}", today, t(start), t(end), WorkKind.TASK, id, "Task $id", Priority.HIGH, status)
 
-    private val on = ReminderSettings(enabled = true, leadMin = 5, travel = true, mealsAndRest = false, morningSummary = false)
+    private val on = ReminderSettings(enabled = true, leadMin = 5, mealsAndRest = false, morningSummary = false)
 
     private fun build(
         settings: ReminderSettings = on, now: String = "07:00",
@@ -82,17 +82,11 @@ class ReminderPlannerTest {
     }
 
     @Test
-    fun leaveForCollegeReminder() {
-        // class 09:00-11:00, arrive 10 min early, 30 min travel -> leave 08:20, reminder 5 minutes before;
-        // the way home starts when the class ends (11:00), reminder at 10:55
-        val r = build().filter { it.kind == ReminderKind.TRAVEL }
-        assertEquals(listOf("08:15", "10:55"), r.map { hm(it.minute) })
-        assertTrue(r[0].title.startsWith("Time to leave"))
-    }
-
-    @Test
-    fun travelRemindersCanBeSwitchedOff() {
-        assertTrue(build(on.copy(travel = false)).none { it.kind == ReminderKind.TRAVEL })
+    fun thereAreNoNotificationsForTravel() {
+        // travel time is blocked (nothing is planned in it) but nobody is reminded about it
+        val all = build(on.copy(mealsAndRest = true, morningSummary = true))
+        assertTrue(all.none { it.title.contains("leave", ignoreCase = true) })
+        assertTrue(all.none { it.text.contains("Travel") })
     }
 
     @Test

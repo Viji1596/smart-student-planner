@@ -191,10 +191,6 @@ fun RemindersScreen(container: AppContainer, onBack: () -> Unit) {
                     fontSize = 13.sp, color = scheme.onSurfaceVariant,
                 )
                 SwitchRow(
-                    "Time to leave", "When to set off for college (needs travel time in your routine).",
-                    prefs.travel, { viewModel.setTravel(it) },
-                )
-                SwitchRow(
                     "Meals and rest", "Before breakfast, lunch, dinner and your rest block.",
                     prefs.mealsAndRest, { viewModel.setMealsAndRest(it) },
                 )

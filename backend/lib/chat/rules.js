@@ -154,10 +154,46 @@ function reportIntent(raw, l, ctx) {
   return say(lead, [{ type: "show_report", args: { days } }]);
 }
 
-function focusIntent(raw, l) {
-  if (
-    !/\b(what should i (do|focus on|work on|start|tackle|study|begin)( first| now| next| today| with)?|where (do|should|can) i (start|begin)|what('?s| is) (the )?(most )?(important|urgent|pressing)( thing)?|what to do first|prioriti[sz]e|help me (prioriti[sz]e|decide|start|focus|choose)|what next|what now|what do i do first)\b/.test(l)
-  ) return null;
+/**
+ * "What should I focus on?" in all the ways people really ask it: "what to focus on", "what do I do now",
+ * "where to start", "which one first", "my priorities", "most urgent", "I don't know where to start"...
+ */
+const FOCUS_ASK = new RegExp(
+  [
+    "\\bfocus(ing)?\\b",
+    "\\bwhat (should|can|could|shall|do|will) i (be )?(do|doing|work on|working on|study|studying|start|tackle|begin|handle|take up)\\b",
+    "\\bwhat (do|should) i need to (do|work on|study|finish|tackle|start)\\b",
+    "\\bwhat to (do|work on|study|start|begin|tackle|handle)\\b",
+    "\\bwhere (to|do i|should i|can i|shall i) (start|begin)\\b",
+    "\\bwhich (task|one|thing|subject|assignment|work)\\b.*\\b(first|start|begin|tackle|work on|do)\\b",
+    "\\b(my|the|top|what'?s|what are|what is) (priority|priorities)\\b",
+    "^(priority|priorities)$",
+    "\\bprioriti[sz]e\\b",
+    "\\b(most|more) (important|urgent|pressing)\\b",
+    "^(the )?(urgent|important|pressing)( task| thing| one)?s?$",
+    "\\bwhat('?s| is| are) (the )?(important|urgent|pressing|first)\\b",
+    "^what first$",
+    "^what (next|now)$",
+    "\\bstart with what\\b",
+    "\\b(don'?t|do not|dont) know (what to do|where to start|what to start|what to work on|what first)\\b",
+    "\\b(tell|suggest|give|show|recommend) me (something|what|where|a task|a thing)\\b.*\\b(do|start|work|study|first)\\b",
+    "\\bsomething to do\\b",
+    "\\bwhat needs my attention\\b",
+    "\\bwhat'?s on my plate\\b",
+  ].join("|")
+);
+
+function focusIntent(raw, l, ctx) {
+  // a command is a command, however politely it is put ("can you please add a low priority task...")
+  if (/\b(add|create|insert|remind me|delete|remove|mark|move|swap|rename|change|set|postpone|skip|reschedule|push|bring back)\b/.test(l) || /^(todo|task|new)\b/.test(l)) return null;
+  // "I can't focus", "I need to focus on dsa": a statement about themselves, not a question
+  if (/^(i|i'm|im|i am|i can't|i cant|my)\b/.test(l) && !/\b(don'?t|do not|dont) know (what|where)\b/.test(l)) return null;
+  // about another day: that is a question about the plan, which another part answers
+  if (/\b(tomorrow|yesterday|next week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(l)) return null;
+  if (!FOCUS_ASK.test(l)) return null;
+  // a sentence that names one of their tasks is about that task
+  const named = ctx ? findBest(l, openTasks(ctx)) : null;
+  if (named && (named.item || named.ambiguous)) return null;
   return say(pick(["Here's where I'd start.", "Good question. This is what matters most right now.", "Let's keep it simple. Start here:"], l), [{ type: "show_focus", args: {} }]);
 }
 
