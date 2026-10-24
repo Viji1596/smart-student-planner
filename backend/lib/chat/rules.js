@@ -7,7 +7,7 @@
 // is used instead for freer conversation; this is what works with no key.
 const { parseDate, parseDueTail, parseTime, parseDuration, label, hhmm, WEEKDAYS } = require("./dates");
 const {
-  fmtMinutes, capital, remove, findBest, say, ask, pick, normalize, openTasks, plannedSessions, toMinutes, sessionMinutes,
+  fmtMinutes, capital, remove, findBest, say, ask, takeIds, idToken, noToken, pick, normalize, openTasks, plannedSessions, toMinutes, sessionMinutes,
 } = require("./common");
 const { supportIntent, smallTalkIntent } = require("./support");
 const { fixTypos, plainText, expandSlang } = require("./typos");
@@ -442,6 +442,7 @@ function progressIntent(raw, l, ctx) {
   const dur = parseDuration(l);
   if (!dur) return null;
   const task = findBest(l, openTasks(ctx));
+  if (task && task.ambiguous) return ask(raw, "Which task do you mean?", task.ambiguous);
   if (!task || !task.item) return null;
   return say(`Noted: ${fmtMinutes(dur.minutes)} on “${task.item.title}”.`, [{ type: "log_progress", args: { taskId: task.item.id, minutes: dur.minutes } }]);
 }
@@ -693,8 +694,11 @@ function followUp(raw, l, past) {
   if ((m = /When should “(.+?)” be due\?/.exec(q))) return `change ${m[1]} due date to ${raw}`;
   if ((m = /How often should “(.+?)” happen\?/.exec(q))) return `add habit ${m[1]} ${raw}`;
   if ((m = /couldn't read the due date .*?When is “(.+?)” due\?/.exec(q))) return `add task ${m[1]} due ${raw}`;
-  if (/What should the task be called\?/.test(q) && prevUser) return `${prevUser} ${raw}`;
-  if (/Which (?:task|one|session|habit) do you mean\?/.test(q) && prevUser) return `${prevUser} ${raw}`;
+  if (/What should the task be called\?/.test(q) && prevUser) return `${takeIds(prevUser).clean} ${raw}`;
+  if (/Which (?:task|one|session|habit) do you mean\?/.test(q)) {
+    const origin = askedAbout(past);
+    if (origin) return `${takeIds(origin.text).clean} ${raw}`;
+  }
   if ((m = /What would you like to do with “(.+?)”\?/.exec(q))) {
     if (/^(done|finished|finish|complete\w*)\b/.test(l)) return `mark ${m[1]} done`;
     if (/^(delete|remove)\b/.test(l)) return `delete ${m[1]}`;
@@ -737,12 +741,127 @@ function resolvePronouns(raw, l, ctx, past) {
   return raw.slice(0, found.index) + topic.title + raw.slice(found.index + found[0].length);
 }
 
+// ======================================================================= choosing between look-alikes
+const WHICH = /Which (?:task|one|session|habit) do you mean\?/;
+const ORDINAL = { first: 0, "1st": 0, "1": 0, one: 0, second: 1, "2nd": 1, "2": 1, two: 1, third: 2, "3rd": 2, "3": 2, three: 2 };
+const WEEKDAY3 = { monday: "mon", tuesday: "tue", wednesday: "wed", thursday: "thu", friday: "fri", saturday: "sat", sunday: "sun" };
+const MONTH3 = { january: "jan", february: "feb", march: "mar", april: "apr", june: "jun", july: "jul", august: "aug", september: "sep", sept: "sep", october: "oct", november: "nov", december: "dec" };
+
+/** Which of the offered choices the reply means: "first", "2", "the last one", "the one due thursday", "30th". */
+function choiceIndex(l, options) {
+  const w = l.replace(/^(the|option|number|no\.?|#)\s+/, "").replace(/\s+(one|option)$/, "").trim();
+  if (Object.prototype.hasOwnProperty.call(ORDINAL, w) && ORDINAL[w] < options.length) return ORDINAL[w];
+  if (/^(the )?last( one)?$/.test(l)) return options.length - 1;
+
+  // by what differs: the due day or the time, as the choices show it
+  const words = l
+    .replace(/\b(the|one|due|on|by|with|that|is|it|a|an|please)\b/g, " ")
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map((x) => x.replace(/^(\d+)(st|nd|rd|th)$/, "$1"))
+    .map((x) => WEEKDAY3[x] || MONTH3[x] || x);
+  if (!words.length) return null;
+  const matches = options
+    .map((o, i) => ({
+      i,
+      // what follows the name, without lengths like "1 h 30 min" (their numbers would be taken for days)
+      detail: o.label.split(" \u00b7 ").slice(1).filter((part) => !/^\d+ ?(h|min)\b/.test(part)).join(" ").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean),
+    }))
+    .filter((c) => c.detail.length && words.every((x) => c.detail.includes(x)));
+  return matches.length === 1 ? matches[0].i : null;
+}
+
+/**
+ * The student answers "Which one do you mean?" with words instead of a tap. If the answer picks one of the choices
+ * (or says nothing new, which would only repeat the question), it is settled here, not glued onto the sentence again.
+ */
+/** The sentence that started a "Which one do you mean?" (it may have been asked several times in a row). */
+function askedAbout(past) {
+  let origin = null;
+  for (let i = past.length - 1; i >= 1; i -= 2) {
+    if (past[i].role === "assistant" && WHICH.test(String(past[i].text || "")) && past[i - 1].role === "user") origin = past[i - 1];
+    else break;
+  }
+  return origin;
+}
+
+function resolveChoice(raw, l, past, context) {
+  const before = askedAbout(past);
+  if (!before) return null;
+  if (l.split(" ").length > 7 || COMMAND_START.test(l)) return null;
+
+  const again = interpret(String(before.text || ""), context, []);
+  const options = again.clarify && again.clarify.options;
+  if (!options || !options.length) return null;
+
+  const index = choiceIndex(l, options);
+  if (index !== null) return interpret(options[index].text, context, []);
+
+  // the name of one of the choices, typed: "physics homework"
+  const named = findBest(l, options.map((o, i) => ({ title: o.label.split(" \u00b7 ")[0], i })));
+  if (named && named.item) return interpret(options[named.item.i].text, context, []);
+
+  const known = new Set(takeIds(before.text).clean.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+  const fresh = l.split(/[^a-z0-9]+/).filter((w) => w && !known.has(w));
+  if (fresh.length === 0) return say(`That doesn't tell them apart.\n${again.reply}`, [], again.clarify);
+  return null; // it adds something new: the old way (put it into the sentence) still applies
+}
+
+/** Other tasks (and habits) that have exactly the name of the chosen ones. */
+function sameNameAs(context, ids) {
+  const c = context || {};
+  const items = [...(c.tasks || []), ...(c.habits || [])];
+  const sessions = (c.plan && c.plan.sessions) || [];
+  const out = [];
+  for (const id of ids) {
+    const session = sessions.find((x) => x.id === id);
+    const chosen = items.find((t) => t.id === (session ? session.refId : id));
+    if (!chosen) continue;
+    for (const t of items) {
+      if (t.id !== chosen.id && String(t.title).trim().toLowerCase() === String(chosen.title).trim().toLowerCase()) out.push(t.id);
+    }
+  }
+  return out;
+}
+
+/**
+ * For this one sentence, the items the student did NOT choose are given names that match nothing, so the chosen one is
+ * the only thing the sentence can mean (whatever the sentence looks like, and even if two have the same name).
+ */
+function isolate(context, excluded) {
+  const c = context || {};
+  const tasks = (c.tasks || []).map((t) => ({ ...t }));
+  const habits = (c.habits || []).map((h) => ({ ...h }));
+  const plan = c.plan ? { ...c.plan, sessions: (c.plan.sessions || []).map((x) => ({ ...x })) } : c.plan;
+  const sessions = plan ? plan.sessions : [];
+  let n = 0;
+  for (const id of excluded) {
+    const hidden = `qzx${"abcdefghij"[n++ % 10]}${Math.floor(n / 10)}qzx`;
+    for (const item of [...tasks, ...habits]) {
+      if (item.id !== id) continue;
+      item.title = hidden;
+      for (const x of sessions) if (x.refId === id) x.title = hidden;
+    }
+    for (const x of sessions) if (x.id === id) x.title = hidden;
+  }
+  return { ...c, tasks, habits, plan };
+}
+
 /**
  * @param history earlier messages of the conversation ([{ role, text }]), not including this one:
  *                it lets "move it to 7" or "I finished that" refer to what was just mentioned.
  */
 function interpret(text, context, history = []) {
-  return understand(text, context, Array.isArray(history) ? history : [], 0);
+  const { clean, ids, excluded } = takeIds(text);
+  const past = Array.isArray(history) ? history : [];
+  const hidden = [...excluded, ...sameNameAs(context, ids)];
+  const result = understand(clean, hidden.length ? isolate(context, hidden) : context, past, 0);
+  // a second question in the same sentence ("swap ... with ...") keeps what was already chosen
+  if ((ids.length || excluded.length) && result.clarify && result.clarify.options) {
+    const carried = [...ids.map(idToken), ...excluded.map(noToken)].join(" ");
+    result.clarify.options = result.clarify.options.map((o) => ({ ...o, text: `${o.text} ${carried}` }));
+  }
+  return result;
 }
 
 function understand(text, context, past, depth) {
@@ -752,6 +871,8 @@ function understand(text, context, past, depth) {
   const ctx = normalize(context);
 
   if (depth === 0) {
+    const settled = resolveChoice(raw, l, past, context);
+    if (settled) return settled;
     const completed = followUp(raw, l, past);
     if (completed) return understand(completed, context, past.slice(0, -2), 1);
     const resolved = resolvePronouns(raw, l, ctx, past);

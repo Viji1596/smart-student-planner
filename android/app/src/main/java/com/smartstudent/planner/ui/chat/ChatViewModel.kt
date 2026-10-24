@@ -37,6 +37,8 @@ data class ChatMessage(
     /** True once a confirm card has been answered. */
     val resolved: Boolean = false,
     val isError: Boolean = false,
+    /** What the assistant is sent when it differs from what is shown (a tapped choice shows its label, sends its exact choice). */
+    val wire: String? = null,
 )
 
 class ChatViewModel(private val service: ChatService) : ViewModel() {
@@ -63,12 +65,15 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
     private fun say(text: String, options: List<ClarifyOptionDto> = emptyList(), error: Boolean = false) =
         add(ChatMessage(nextId++, false, text, options = options, isError = error))
 
-    fun send(text: String) {
+    /** A tapped choice: the chat shows its label, and the assistant is told exactly which one was meant. */
+    fun choose(option: ClarifyOptionDto) = send(option.label, wire = option.text)
+
+    fun send(text: String, wire: String? = null) {
         val clean = text.trim().take(1000)
         if (clean.isEmpty() || _typing.value) return
         // choices from an earlier question are no longer needed
         _messages.value = _messages.value.map { if (it.options.isNotEmpty()) it.copy(options = emptyList()) else it }
-        add(ChatMessage(nextId++, true, clean))
+        add(ChatMessage(nextId++, true, clean, wire = wire?.trim()?.take(1000)))
         _typing.value = true
 
         viewModelScope.launch {
@@ -77,7 +82,7 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
                 val history = _messages.value
                     .filter { it.pending == null && !it.isError }
                     .takeLast(12)
-                    .map { ChatMessageDto(if (it.fromUser) "user" else "assistant", it.text) }
+                    .map { ChatMessageDto(if (it.fromUser) "user" else "assistant", it.wire ?: it.text) }
                 val response = try {
                     service.ask(history, context)
                 } catch (e: CancellationException) {
@@ -186,7 +191,7 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
 
     companion object {
         /** The backend version this app is built for. An older backend is pointed out in the chat. */
-        const val EXPECTED_SERVER = "6.6"
+        const val EXPECTED_SERVER = "6.7"
 
         private const val GREETING =
             "Hi! I'm your planner assistant. Ask about your plan, tell me what to add or change, ask how you're doing, " +

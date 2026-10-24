@@ -84,8 +84,67 @@ function say(reply, actions = [], clarify = null) {
   return { reply, actions, clarify };
 }
 
+// ----------------------------------------------------------------------------- telling look-alikes apart
+// "Which one do you mean?" is answered with an exact choice, however the sentence is built: the chosen item's id and the
+// ids of the others it could have been travel in the message as [[id:...]] and [[no:...]]. They are taken out and used
+// before the sentence is understood (see isolate), and the app shows the label instead, so nobody ever sees them.
+// (Gluing the chosen name onto the end of the sentence fails for "move physics to tomorrow": the part after "to" is
+// not where the planner looks for the name. Two items with the very same name can't be told apart by name at all.)
+const ID_TOKEN = /\[\[(id|no):([\w-]{1,80})\]\]/g;
+const idToken = (id) => `[[id:${id}]]`;
+const noToken = (id) => `[[no:${id}]]`;
+
+function takeIds(text) {
+  const ids = [];
+  const excluded = [];
+  const clean = String(text || "")
+    .replace(ID_TOKEN, (_, kind, id) => {
+      (kind === "id" ? ids : excluded).push(id);
+      return " ";
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+  return { clean, ids, excluded };
+}
+
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function shortDate(iso) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+function lengthText(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h && m ? `${h} h ${m} min` : h ? `${h} h` : `${m} min`;
+}
+
+/** What tells one item from another with the same name: a session's time, a task's due date and length. */
+function describe(item) {
+  if (item.start && item.end) return `${item.start}\u2013${item.end}` + (item.due ? ` \u00b7 due ${shortDate(item.due)}` : "");
+  const bits = [];
+  if ("minutes" in item || "completed" in item) bits.push(item.due ? `due ${shortDate(item.due)}` : "no due date");
+  if (item.minutes) bits.push(lengthText(item.minutes));
+  return bits.join(" \u00b7 ");
+}
+
 function ask(raw, question, items) {
-  return say(question, [], { question, options: items.map((i) => ({ label: i.title, text: `${raw} ${i.title}` })) });
+  // what each choice carries: this one, and not the others it could have been
+  const choice = (item) => [idToken(item.id), ...items.filter((o) => o !== item).map((o) => noToken(o.id))].join(" ");
+  const names = items.map((i) => String(i.title).trim().toLowerCase());
+  const lookAlikes = names.some((n, i) => names.indexOf(n) !== i);
+  if (!lookAlikes) {
+    return say(question, [], { question, options: items.map((i) => ({ label: i.title, text: `${raw} ${choice(i)}` })) });
+  }
+  const reply =
+    `You have ${items.length} called \u201c${items[0].title}\u201d. ${question}\n` +
+    items.map((i, n) => `${n + 1}. ${describe(i)}`).join("\n") +
+    `\nTap one, or say \u201cfirst\u201d or \u201csecond\u201d.`;
+  return say(reply, [], {
+    question,
+    options: items.map((i) => ({ label: `${i.title} \u00b7 ${describe(i)}`, text: `${raw} ${choice(i)}` })),
+  });
 }
 
 /** The same input always gives the same pick, so the assistant varies its words without being random. */
@@ -105,12 +164,16 @@ function normalize(context) {
     busy: list(d && d.busy),
     freeBlocks: list(d && d.freeBlocks),
   });
+  const tasks = list(c.tasks).filter((t) => t && t.id && t.title);
+  const dueOf = new Map(tasks.map((t) => [t.id, t.due]));
+  const plan = day(c.plan);
+  plan.sessions = plan.sessions.map((x) => (x && x.refId && dueOf.get(x.refId) && !x.due ? { ...x, due: dueOf.get(x.refId) } : x));
   return {
     today: /^\d{4}-\d{2}-\d{2}$/.test(c.today) ? c.today : new Date().toISOString().slice(0, 10),
     nowMin: Number.isFinite(c.nowMin) ? c.nowMin : null,
-    tasks: list(c.tasks).filter((t) => t && t.id && t.title),
+    tasks,
     habits: list(c.habits).filter((h) => h && h.id && h.title),
-    plan: day(c.plan),
+    plan,
     tomorrow: day(c.tomorrow),
     report: c.report || null,
     focus: c.focus && c.focus.taskId && c.focus.title ? { taskId: c.focus.taskId, title: c.focus.title } : null,
@@ -126,6 +189,6 @@ const toMinutes = (hm) => {
 const sessionMinutes = (s) => (toMinutes(s.end) ?? 0) - (toMinutes(s.start) ?? 0);
 
 module.exports = {
-  tokens, fmtMinutes, capital, remove, findBest, say, ask, hash, pick, normalize, openTasks, plannedSessions,
+  tokens, fmtMinutes, capital, remove, findBest, say, ask, takeIds, idToken, noToken, hash, pick, normalize, openTasks, plannedSessions,
   toMinutes, sessionMinutes, label, NOT_ABOUT_THE_TASK,
 };

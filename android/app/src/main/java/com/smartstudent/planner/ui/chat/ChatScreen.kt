@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.smartstudent.planner.AppContainer
+import com.smartstudent.planner.data.remote.ClarifyOptionDto
 import com.smartstudent.planner.ui.common.RoundIconButton
 
 private val STARTERS = listOf("What's my plan today?", "How much free time do I have tomorrow?", "Re-plan my day", "Help")
@@ -109,7 +110,7 @@ fun ChatScreen(container: AppContainer, onBack: () -> Unit) {
                     message,
                     onConfirm = { viewModel.confirm(message.id) },
                     onCancel = { viewModel.cancel(message.id) },
-                    onChoose = viewModel::send,
+                    onChoose = viewModel::choose,
                 )
             }
             if (typing) {
@@ -149,7 +150,7 @@ fun ChatScreen(container: AppContainer, onBack: () -> Unit) {
 }
 
 @Composable
-private fun Bubble(message: ChatMessage, onConfirm: () -> Unit, onCancel: () -> Unit, onChoose: (String) -> Unit) {
+private fun Bubble(message: ChatMessage, onConfirm: () -> Unit, onCancel: () -> Unit, onChoose: (ClarifyOptionDto) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     if (message.fromUser) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -186,7 +187,7 @@ private fun Bubble(message: ChatMessage, onConfirm: () -> Unit, onCancel: () -> 
         }
         if (message.options.isNotEmpty()) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                message.options.forEach { option -> SuggestionChip(onClick = { onChoose(option.text) }, label = { Text(option.label) }) }
+                message.options.forEach { option -> SuggestionChip(onClick = { onChoose(option) }, label = { Text(option.label) }) }
             }
         }
     }
