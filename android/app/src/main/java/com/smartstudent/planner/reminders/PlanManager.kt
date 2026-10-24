@@ -33,6 +33,8 @@ import com.smartstudent.planner.domain.MoveResult
 import com.smartstudent.planner.domain.Scheduler
 import com.smartstudent.planner.domain.SessionMover
 import com.smartstudent.planner.domain.SessionStatus
+import com.smartstudent.planner.domain.PlaceAllResult
+import com.smartstudent.planner.domain.TaskMover
 import com.smartstudent.planner.domain.SummarySchedule
 import com.smartstudent.planner.domain.TimeBlock
 import com.smartstudent.planner.domain.TimeUtil
@@ -365,6 +367,88 @@ class PlanManager(
         val row = sessionDao.getById(sessionId)
         sessionDao.updateStatus(sessionId, SessionStatus.DONE.name)
         if (row != null) sessionDao.deleteMissedFor(row.date, row.kind, row.refId)
+    }
+
+    /**
+     * Swaps two whole tasks: all the upcoming time one has goes to the other (the later one now comes first), however
+     * many sessions each has. Sessions that have already started stay where they are.
+     */
+    suspend fun swapTasks(aTaskId: String, bTaskId: String): MoveOutcome = mutex.withLock {
+        try {
+            val now = LocalDateTime.now()
+            val today = now.toLocalDate()
+            val nowMin = now.hour * 60 + now.minute
+
+            val sessions = sessionDao.getForDate(today.toString()).mapNotNull { it.toDomainOrNull() }
+            fun upcoming(id: String) = sessions.filter {
+                it.kind == WorkKind.TASK && it.refId == id && it.status == SessionStatus.PLANNED && it.startMin > nowMin
+            }
+            fun name(id: String) = sessions.firstOrNull { it.refId == id }?.title ?: tasks.get(id)?.title ?: "That task"
+            val a = upcoming(aTaskId)
+            val b = upcoming(bTaskId)
+            if (a.isEmpty()) return@withLock MoveOutcome.Refused("“${name(aTaskId)}” has nothing left today that hasn't started, so there's nothing to swap.")
+            if (b.isEmpty()) return@withLock MoveOutcome.Refused("“${name(bTaskId)}” has nothing left today that hasn't started, so there's nothing to swap.")
+
+            val swapped = TaskMover.swap(today, a, b)
+            val gone = (a + b).map { it.id }.toSet()
+            val rest = sessions.filter { it.id !in gone } + swapped
+            sessionDao.replaceForDate(today.toString(), rest.map { it.toEntity() })
+            doReconcile(userInitiated = true, force = true, skipId = null)
+            MoveOutcome.Moved(swapped.minOf { it.startMin })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Swapping tasks failed: ${e.message}", e)
+            MoveOutcome.Refused("Something went wrong while swapping them.")
+        }
+    }
+
+    /**
+     * Moves a whole task that has several sessions today: they are placed back to back from [timeMin] (or, if
+     * [flexible], the nearest free time). Nothing moves unless all of them fit.
+     */
+    suspend fun moveTask(taskId: String, timeMin: Int, flexible: Boolean): MoveOutcome = mutex.withLock {
+        try {
+            val now = LocalDateTime.now()
+            val today = now.toLocalDate()
+            val nowMin = now.hour * 60 + now.minute
+
+            val rules = settings.settings.first().toRules()
+            val todayEntries = timetable.entries.first()
+                .mapNotNull { e -> e.toFixedEntry()?.let { e.dayOfWeek to it } }
+                .filter { it.first == today.dayOfWeek.value }
+                .map { it.second }
+            val plan = DayPlanner.plan(rules, todayEntries)
+
+            val sessions = sessionDao.getForDate(today.toString()).mapNotNull { it.toDomainOrNull() }
+            val mine = sessions
+                .filter { it.kind == WorkKind.TASK && it.refId == taskId && it.status == SessionStatus.PLANNED && it.startMin > nowMin }
+                .sortedBy { it.startMin }
+            if (mine.isEmpty()) return@withLock MoveOutcome.Refused("That task has nothing left today that hasn't started, so there's nothing to move.")
+
+            val mineIds = mine.map { it.id }.toSet()
+            val blockers = sessions
+                .filter { it.id !in mineIds && it.status == SessionStatus.PLANNED && (it.pinned || it.startMin <= nowMin) }
+                .map { TimeBlock(it.startMin, it.endMin, it.title, BlockKind.CLASS) }
+
+            when (val result = TaskMover.placeAll(plan, blockers, mine.map { it.duration }, timeMin, nowMin, flexible)) {
+                is PlaceAllResult.Refused -> MoveOutcome.Refused(result.reason)
+                is PlaceAllResult.Placed -> {
+                    val moved = mine.mapIndexed { i, s ->
+                        val start = result.starts[i]
+                        s.copy(id = PlanReconciler.sessionId(today, s.kind, s.refId, start), startMin = start, endMin = start + s.duration, pinned = true)
+                    }
+                    sessionDao.replaceForDate(today.toString(), (sessions.filter { it.id !in mineIds } + moved).map { it.toEntity() })
+                    doReconcile(userInitiated = true, force = true, skipId = null)
+                    MoveOutcome.Moved(result.starts.first())
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Moving a task failed: ${e.message}", e)
+            MoveOutcome.Refused("Something went wrong while moving it.")
+        }
     }
 
     /**

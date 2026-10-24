@@ -7,7 +7,7 @@
 // is used instead for freer conversation; this is what works with no key.
 const { parseDate, parseDueTail, parseTime, parseDuration, label, hhmm, WEEKDAYS } = require("./dates");
 const {
-  fmtMinutes, capital, remove, findBest, say, ask, takeIds, idToken, noToken, pick, normalize, openTasks, plannedSessions, toMinutes, sessionMinutes,
+  fmtMinutes, capital, remove, findBest, say, ask, takeIds, idToken, noToken, sessionGroups, pick, normalize, openTasks, plannedSessions, toMinutes, sessionMinutes,
 } = require("./common");
 const { supportIntent, smallTalkIntent } = require("./support");
 const { fixTypos, plainText, expandSlang } = require("./typos");
@@ -474,10 +474,10 @@ function completeIntent(raw, l, ctx, history) {
 
 function skipIntent(raw, l, ctx, history) {
   if (!/^(?:please\s+)?(?:skip|postpone|push back|snooze)\b|\blater\b/.test(l)) return null;
-  const sessions = plannedSessions(ctx);
-  const session = findBest(l, sessions);
-  if (session && session.ambiguous) return ask(raw, "Which session do you mean?", session.ambiguous);
-  if (session && session.item) return say(`Skipping “${session.item.title}”: I'll plan it again for later today.`, [{ type: "skip_session", args: { sessionId: session.item.id } }]);
+  // a task planned as several sessions: the next one is skipped
+  const session = findBest(l, sessionGroups(ctx));
+  if (session && session.ambiguous) return ask(raw, "Which one do you mean?", session.ambiguous);
+  if (session && session.item) return say(`Skipping “${session.item.title}”: I'll plan it again for later today.`, [{ type: "skip_session", args: { sessionId: session.item.sessions[0].id } }]);
   if (/\b(it|this|that|this one|that one)\b/.test(l)) {
     const last = lastMentioned(history, ctx);
     if (last && last.session) return say(`Skipping “${last.session.title}”: I'll plan it again for later today.`, [{ type: "skip_session", args: { sessionId: last.session.id } }]);

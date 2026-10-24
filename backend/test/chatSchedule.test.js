@@ -70,12 +70,21 @@ test("a part of the day, now, later", () => {
   assert.equal(one("move maths homework to later").type, "skip_session");
 });
 
-test("swapping two sessions", () => {
+test("swapping two tasks by name swaps the whole tasks, not one slot", () => {
   const a = one("swap maths homework and reading");
-  assert.deepEqual([a.type, a.args], ["swap_sessions", { sessionA: "s1", sessionB: "s3" }]);
-  assert.equal(one("switch the first and the last session").args.sessionB, "s4");
-  assert.equal(one("put reading in the slot of maths homework").type, "swap_sessions");
-  assert.equal(one("move physics instead of reading").type, "swap_sessions");
+  assert.deepEqual([a.type, a.args], ["swap_tasks", { taskA: "t1", taskB: "t3" }]);
+  assert.equal(one("put reading in the slot of maths homework").type, "swap_tasks");
+  assert.equal(one("move physics instead of reading").type, "swap_tasks");
+  assert.match(run("swap maths homework and reading").reply, /Swapping the whole tasks/);
+});
+
+test("pointing at slots (by position or by time) swaps the slots", () => {
+  assert.deepEqual(one("switch the first and the last session").args, { sessionA: "s1", sessionB: "s4" });
+  assert.equal(one("switch the first and the last session").type, "swap_sessions");
+  assert.deepEqual(one("swap the 4pm one and the 7pm one").args, { sessionA: "s1", sessionB: "s3" });
+  assert.equal(one("swap the first and second").type, "swap_sessions");
+  // a name and a slot together: the slot decides
+  assert.equal(one("swap reading and the first one").type, "swap_sessions");
 });
 
 test("swapping a session with itself is caught", () => {
@@ -195,7 +204,7 @@ test("filler words at the start don't matter", () => {
   assert.equal(one("actually, move physics to 6pm").args.sessionId, "s2");
   assert.equal(one("hey, add task call home 10 min").type, "add_task");
   assert.equal(one("so I finished maths homework").type, "complete_task");
-  assert.equal(one("hmm swap maths homework and reading").type, "swap_sessions");
+  assert.equal(one("hmm swap maths homework and reading").type, "swap_tasks");
   assert.equal(one("also move reading to tonight").args.time, "20:00");
 });
 
@@ -210,7 +219,7 @@ test("a conversation: the move fails to parse a name, then 'it' picks up what wa
     { role: "assistant", text: "Putting “Reading” after Dinner (from 20:40)." },
   ];
   const a = one("actually swap it with maths homework", history);
-  assert.deepEqual(a.args, { sessionA: "s3", sessionB: "s1" });
+  assert.deepEqual([a.type, a.args], ["swap_tasks", { taskA: "t3", taskB: "t1" }]);
 });
 
 test("the assistant's own examples are not what 'it' refers to", () => {

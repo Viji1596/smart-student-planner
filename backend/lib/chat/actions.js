@@ -137,6 +137,28 @@ const ACTIONS = {
       required: ["sessionA", "sessionB"],
     },
   },
+  swap_tasks: {
+    confirm: false,
+    description:
+      "Swap two whole tasks in today's plan: all the time one has goes to the other. The one that came later now comes first. Use this when the student names two tasks ('swap maths and physics'). Use swap_sessions only when they point at particular slots ('swap the 7pm one and the 9pm one').",
+    schema: z.object({ taskA: id, taskB: id }).refine((a) => a.taskA !== a.taskB, "two different tasks"),
+    input_schema: {
+      type: "object",
+      properties: { taskA: { type: "string" }, taskB: { type: "string" } },
+      required: ["taskA", "taskB"],
+    },
+  },
+  move_task: {
+    confirm: false,
+    description:
+      "Move a whole task that has several sessions today to a different time today: all its sessions are placed back to back from that time. Use for 'move maths to 9pm' when maths has more than one session today; for a single session use move_session.",
+    schema: z.object({ taskId: id, time: hm, flexible: z.boolean().optional() }),
+    input_schema: {
+      type: "object",
+      properties: { taskId: { type: "string" }, time: { type: "string", description: "HH:mm, 24-hour" }, flexible: { type: "boolean" } },
+      required: ["taskId", "time"],
+    },
+  },
   defer_task: {
     confirm: false,
     description:

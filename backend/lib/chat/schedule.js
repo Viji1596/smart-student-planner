@@ -1,7 +1,8 @@
 // Moving things around, in plain English: "move physics to 6", "swap maths and reading", "put reading
 // after dinner", "shift it to the evening", "move maths to tomorrow", "start maths today".
 const { parseDate, parseTime, label, hhmm, addDays } = require("./dates");
-const { say, ask, findBest, openTasks, plannedSessions, toMinutes, sessionMinutes, fmtMinutes } = require("./common");
+const { say, ask, findBest, openTasks, plannedSessions, toMinutes, sessionMinutes, fmtMinutes, sessionGroups,
+} = require("./common");
 
 const STRONG_VERBS = new Set(["move", "shift", "reschedule", "swap", "switch", "postpone", "push", "delay", "slide", "pull"]);
 const VERBS = "move|shift|reschedule|schedule|put|set|do|push|bring|slide|postpone|delay|pull";
@@ -62,13 +63,13 @@ function pickSubject(text, ctx, history) {
   const ordinal = /^(first|1st|second|2nd|third|3rd|fourth|4th|next|upcoming|last|final|earliest|latest)\b/.exec(s);
   if (ordinal && sessions.length) {
     const w = ordinal[1];
-    if (/^(last|final|latest)$/.test(w)) return { session: sessions[sessions.length - 1] };
+    if (/^(last|final|latest)$/.test(w)) return { session: sessions[sessions.length - 1], slot: true };
     if (/^(next|upcoming)$/.test(w)) {
       const next = sessions.find((x) => (toMinutes(x.start) ?? 0) > (ctx.nowMin ?? 0)) || sessions[0];
-      return { session: next };
+      return { session: next, slot: true };
     }
     const idx = { first: 0, "1st": 0, earliest: 0, second: 1, "2nd": 1, third: 2, "3rd": 2, fourth: 3, "4th": 3 }[w];
-    return sessions[idx] ? { session: sessions[idx] } : null;
+    return sessions[idx] ? { session: sessions[idx], slot: true } : null;
   }
 
   const clock = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/.exec(s);
@@ -77,12 +78,13 @@ function pickSubject(text, ctx, history) {
     const m = clock[2] ? Number(clock[2]) : 0;
     const wanted = clock[3] ? [((h % 12) + (clock[3] === "pm" ? 12 : 0)) * 60 + m] : [h * 60 + m, ((h % 12) + 12) * 60 + m];
     const match = sessions.filter((x) => wanted.includes(toMinutes(x.start)));
-    if (match.length === 1) return { session: match[0] };
+    if (match.length === 1) return { session: match[0], slot: true };
     if (match.length > 1) return { ambiguous: match };
   }
 
-  const found = findBest(s, sessions);
-  if (found) return found.ambiguous ? { ambiguous: found.ambiguous } : { session: found.item };
+  // by name: a task is one thing, even when the day splits it into several sessions
+  const found = findBest(s, sessionGroups(ctx));
+  if (found) return found.ambiguous ? { ambiguous: found.ambiguous } : { session: found.item.sessions[0], group: found.item };
   const task = findBest(s, openTasks(ctx));
   if (task && task.item) return { task: task.item };
   if (task && task.ambiguous) return { ambiguous: task.ambiguous };
@@ -169,6 +171,21 @@ function askWhere(title, durationMin, ctx) {
   return say(question, [], { question, options: whereOptions(title, durationMin, ctx) });
 }
 
+/** The whole task a subject means: all of its sessions today. Null when the student pointed at one slot (the 7pm one, the first one). */
+function wholeOf(subject, ctx) {
+  if (!subject || !subject.session || subject.slot || subject.session.kind !== "TASK") return null;
+  const group = subject.group || sessionGroups(ctx).find((g) => g.id === subject.session.refId);
+  if (!group) return null;
+  return { taskId: group.id, title: group.title, sessions: group.sessions, due: group.due };
+}
+
+const spans = (w) => w.sessions.map((x) => `${x.start}\u2013${x.end}`).join(", ");
+
+function describeTaskSwap(a, b) {
+  const later = toMinutes(a.sessions[0].start) <= toMinutes(b.sessions[0].start) ? b : a;
+  return `Swapping the whole tasks: “${a.title}” (${spans(a)}) and “${b.title}” (${spans(b)}). “${later.title}” will now come first.`;
+}
+
 function describeSwap(a, b) {
   return `Swapping “${a.title}” (${a.start}) and “${b.title}” (${b.start}).`;
 }
@@ -193,11 +210,19 @@ function scheduleIntent(raw, l, ctx, history) {
   if (m) {
     const a = pickSubject(m[1], ctx, history);
     const b = pickSubject(m[2], ctx, history);
+    const unclear = (a && a.ambiguous) || (b && b.ambiguous);
+    if (unclear) return ask(raw, "Which one do you mean?", unclear);
     if (a && b && a.session && b.session) {
+      // naming two tasks swaps the tasks, with all their time; pointing at slots swaps the slots
+      const wa = wholeOf(a, ctx);
+      const wb = wholeOf(b, ctx);
+      if (wa && wb) {
+        if (wa.taskId === wb.taskId) return say("That's the same task twice. Which two should I swap?");
+        return say(describeTaskSwap(wa, wb), [{ type: "swap_tasks", args: { taskA: wa.taskId, taskB: wb.taskId } }]);
+      }
       if (a.session.id === b.session.id) return say("That's the same session twice. Which two should I swap?");
       return say(describeSwap(a.session, b.session), [{ type: "swap_sessions", args: { sessionA: a.session.id, sessionB: b.session.id } }]);
     }
-    if ((a && a.ambiguous) || (b && b.ambiguous)) return ask(raw, "Which session do you mean?", (a.ambiguous || b.ambiguous));
     return say("I can only swap sessions that are planned for today. Say “what's my plan today?” to see them.");
   }
 
@@ -259,7 +284,13 @@ function scheduleIntent(raw, l, ctx, history) {
   // ---- swap with another session ("in the slot of ...", "instead of ...")
   if (slotOf) {
     const other = pickSubject(target, ctx, history);
+    if (session && other && other.ambiguous) return ask(raw, "Which one do you mean?", other.ambiguous);
     if (session && other && other.session && other.session.id !== session.id) {
+      const wa = wholeOf(subject, ctx);
+      const wb = wholeOf(other, ctx);
+      if (wa && wb && wa.taskId !== wb.taskId) {
+        return say(describeTaskSwap(wa, wb), [{ type: "swap_tasks", args: { taskA: wa.taskId, taskB: wb.taskId } }]);
+      }
       return say(describeSwap(session, other.session), [{ type: "swap_sessions", args: { sessionA: session.id, sessionB: other.session.id } }]);
     }
     return say("Which of today's sessions should it take the place of?");
@@ -284,7 +315,15 @@ function scheduleIntent(raw, l, ctx, history) {
     if (task && !later && !earlier && (time || now || relative)) return placeTask(task, { time, now, relative, prep, target }, ctx);
     return say(task ? `“${task.title}” isn't planned for today. Tell me a time (“at 6pm”) and I'll schedule it, or say “do it tomorrow”.` : "I couldn't find that among today's planned sessions.");
   }
-  const duration = sessionMinutes(session);
+  // naming a task that is planned as several sessions moves all of it, back to back; one slot is moved only when pointed at
+  const whole = wholeOf(subject, ctx);
+  const several = whole && whole.sessions.length > 1 ? whole : null;
+  const duration = several ? several.sessions.reduce((n, x) => n + sessionMinutes(x), 0) : sessionMinutes(session);
+  const moveAction = (at, flexible) =>
+    several
+      ? { type: "move_task", args: { taskId: several.taskId, time: hhmm(at), flexible } }
+      : { type: "move_session", args: { sessionId: session.id, time: hhmm(at), flexible } };
+  const what = several ? `“${session.title}” (all ${several.sessions.length} sessions, ${fmtMinutes(duration)})` : `“${session.title}”`;
 
   if (later) return say(`Okay, I'll plan “${session.title}” again for later today.`, [{ type: "skip_session", args: { sessionId: session.id } }]);
   if (earlier) return askWhere(session.title, duration, ctx);
@@ -292,7 +331,7 @@ function scheduleIntent(raw, l, ctx, history) {
   if (now) {
     const at = ctx.nowMin === null ? null : roundUp5(ctx.nowMin);
     if (at === null) return askWhere(session.title, duration, ctx);
-    return say(`Moving “${session.title}” to the next free slot from now.`, [{ type: "move_session", args: { sessionId: session.id, time: hhmm(at), flexible: true } }]);
+    return say(`Moving ${what} to the next free slot from now.`, [moveAction(at, true)]);
   }
 
   if (relative) {
@@ -302,16 +341,16 @@ function scheduleIntent(raw, l, ctx, history) {
     }
     if (prep === "after") {
       const at = roundUp5(anchor.name === "class" ? anchor.end : anchor.end);
-      return say(`Putting “${session.title}” after ${anchor.name} (from ${hhmm(at)}).`, [{ type: "move_session", args: { sessionId: session.id, time: hhmm(at), flexible: true } }]);
+      return say(`Putting ${what} after ${anchor.name} (from ${hhmm(at)}).`, [moveAction(at, true)]);
     }
     const startAt = (anchor.name === "class" ? anchor.start : anchor.start) - duration - 5;
     if (startAt < 0) return say(`There's no room before ${anchor.name} today.`);
-    return say(`Putting “${session.title}” before ${anchor.name} (at ${hhmm(startAt)}).`, [{ type: "move_session", args: { sessionId: session.id, time: hhmm(startAt), flexible: false } }]);
+    return say(`Putting ${what} before ${anchor.name} (at ${hhmm(startAt)}).`, [moveAction(startAt, false)]);
   }
 
   if (time) {
     const where = time.flexible ? `around ${hhmm(time.minutes)}` : `to ${hhmm(time.minutes)}`;
-    return say(`Moving “${session.title}” ${where}.`, [{ type: "move_session", args: { sessionId: session.id, time: hhmm(time.minutes), flexible: time.flexible } }]);
+    return say(`Moving ${what} ${where}.`, [moveAction(time.minutes, time.flexible)]);
   }
   return null;
 }

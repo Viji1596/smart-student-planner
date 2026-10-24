@@ -106,25 +106,24 @@ test("a new command in the middle of a question is a new command", () => {
   assert.equal(run("move physics lab to 11pm", h).actions[0].args.sessionId, "sc");
 });
 
-test("moving a session by time, the other copy is left alone", () => {
+test("moving by time, the other copy is left alone", () => {
   const r = question("move deep learning project to 11pm");
   assert.match(r.reply, /Which one do you mean\?/);
   const a = run(r.clarify.options[1].text);
   assert.deepEqual([a.actions[0].type, a.actions[0].args.sessionId, a.actions[0].args.time], ["move_session", "sb", "23:00"]);
 });
 
-test("swapping with a look-alike asks which, then swaps the right pair", () => {
+test("swapping with a look-alike asks which task, then swaps the right pair of whole tasks", () => {
   const r = question("swap deep learning project with physics lab");
-  assert.match(r.reply, /Which session do you mean\?/);
+  assert.match(r.reply, /Which one do you mean\?/);
   assert.ok(r.clarify.options.every((o) => /\[\[id:/.test(o.text)));
-  const labels = r.clarify.options.map((o) => o.label);
-  assert.match(labels[0], /20:00–21:00/);
+  assert.match(r.clarify.options[0].label, /20:00–21:00/);
   const second = run(r.clarify.options[1].text);
-  assert.deepEqual([second.actions[0].type, second.actions[0].args.sessionA, second.actions[0].args.sessionB], ["swap_sessions", "sb", "sc"]);
+  assert.deepEqual([second.actions[0].type, second.actions[0].args.taskA, second.actions[0].args.taskB], ["swap_tasks", "b", "c"]);
   // by words
   const h = turn([], "swap deep learning project with physics lab", r.reply);
   const byWord = run("the first one", h);
-  assert.deepEqual([byWord.actions[0].args.sessionA, byWord.actions[0].args.sessionB], ["sa", "sc"]);
+  assert.deepEqual([byWord.actions[0].args.taskA, byWord.actions[0].args.taskB], ["a", "c"]);
 });
 
 test("other things about a look-alike also work: done, delete (asks first), make it 2 hours", () => {
@@ -193,7 +192,7 @@ test("two vague names in one sentence: asked twice, and the right pair is swappe
   assert.equal(q2.actions.length, 0);
   assert.match(q2.reply, /You have 2 called “Maths”/);
   const done = interpret(q2.clarify.options[1].text, ctx, []); // the second Maths
-  assert.deepEqual([done.actions[0].type, done.actions[0].args.sessionA, done.actions[0].args.sessionB], ["swap_sessions", "sb", "sd"]);
+  assert.deepEqual([done.actions[0].type, done.actions[0].args.taskA, done.actions[0].args.taskB], ["swap_tasks", "b", "d"]);
 });
 
 test("a progress note about a name that matches two tasks asks which, instead of making a junk task", () => {
@@ -237,6 +236,135 @@ test("every kind of command with a vague name: every chip leads somewhere, nothi
     }
   }
   assert.deepEqual(stuck, []);
+});
+
+// ============================================================================ the phone's real ids, and one task in several sessions
+// A session's id on the phone looks like "2026-10-24|TASK|<task id>|<start minute>". An earlier version of the choice
+// markers only accepted letters, digits and dashes, so on the phone the choice never took effect and the question repeated.
+const T1 = "3f2a9c1e-5b7d-4e21-9a10-6c8d2f4b7a11";
+const T2 = "8b1d4e77-2c30-4f5a-b6e9-0a7c1d3e5f22";
+const T3 = "c4e6a8b0-1d2f-4a3b-8c5d-7e9f0a1b2c33";
+const sid = (ref, start) => `2026-10-24|TASK|${ref}|${start}`;
+const real = {
+  today: "2026-10-24",
+  nowMin: 19 * 60 + 6,
+  tasks: [
+    { id: T1, title: "Deep learning project", minutes: 120, due: "2026-10-24", completed: false },
+    { id: T2, title: "MLP Project", minutes: 60, due: "2026-10-25", completed: false },
+    { id: T3, title: "Physics lab", minutes: 30, completed: false },
+  ],
+  habits: [],
+  plan: {
+    sessions: [
+      { id: sid(T1, 1160), title: "Deep learning project", kind: "TASK", refId: T1, start: "19:20", end: "19:50", status: "PLANNED" },
+      { id: sid(T3, 1195), title: "Physics lab", kind: "TASK", refId: T3, start: "19:55", end: "20:25", status: "PLANNED" },
+      { id: sid(T1, 1230), title: "Deep learning project", kind: "TASK", refId: T1, start: "20:30", end: "22:00", status: "PLANNED" },
+      { id: sid(T2, 1330), title: "MLP Project", kind: "TASK", refId: T2, start: "22:10", end: "23:10", status: "PLANNED" },
+    ],
+    busy: [], freeBlocks: [],
+  },
+  tomorrow: { sessions: [], freeMinutes: 400 },
+};
+
+test("ids with | and : in them work (the bug on the phone: choosing never took effect)", () => {
+  const twin = {
+    ...real,
+    tasks: [...real.tasks, { id: "99999999-0000-4000-8000-000000000001", title: "Physics lab", minutes: 60, due: "2026-10-26", completed: false }],
+    plan: { ...real.plan, sessions: [...real.plan.sessions, { id: sid("99999999-0000-4000-8000-000000000001", 1400), title: "Physics lab", kind: "TASK", refId: "99999999-0000-4000-8000-000000000001", start: "23:20", end: "23:50", status: "PLANNED" }] },
+  };
+  const q = interpret("move physics lab to tomorrow", twin, []);
+  assert.match(q.reply, /You have 2 called/);
+  assert.ok(q.clarify.options.every((o) => o.text.includes("|") || o.text.includes("-")));
+  for (const [i, expected] of [[0, T3], [1, "99999999-0000-4000-8000-000000000001"]]) {
+    const r = interpret(q.clarify.options[i].text, twin, []);
+    assert.deepEqual([r.actions[0].type, r.actions[0].args.taskId], ["defer_task", expected]);
+  }
+  // and by words, with the history exactly as the app sends it
+  const h = turn([], "move physics lab to tomorrow", q.reply);
+  assert.equal(interpret("first", twin, h).actions[0].args.taskId, T3);
+  assert.equal(interpret("second", twin, h).actions[0].args.taskId, "99999999-0000-4000-8000-000000000001");
+});
+
+test("a marker with a session id on the phone's format is taken out of the sentence", () => {
+  const id = sid(T1, 1160);
+  const r = interpret(`move physics lab to tomorrow [[id:${id}]] [[no:${sid(T1, 1230)}]]`, real, []);
+  assert.ok(!r.reply.includes("[["), r.reply);
+  assert.equal(r.actions[0].args.taskId, T3);
+});
+
+test("one task planned as two sessions is ONE task: no 'which session?' for a name (the screenshot)", () => {
+  for (const sentence of ["swap deep learning project with mlp project", "swap mlp project with deep learning project", "swap deep learning project and physics lab"]) {
+    const r = interpret(sentence, real, []);
+    assert.equal(r.clarify, null, sentence);
+    assert.equal(r.actions[0].type, "swap_tasks", sentence);
+  }
+  const swap = interpret("swap deep learning project with mlp project", real, []).actions[0];
+  assert.deepEqual([swap.args.taskA, swap.args.taskB], [T1, T2]);
+  assert.match(interpret("swap deep learning project with mlp project", real, []).reply, /19:20–19:50, 20:30–22:00/);
+  assert.match(interpret("swap deep learning project with mlp project", real, []).reply, /“MLP Project” will now come first/);
+});
+
+test("moving a task that has two sessions moves all of it", () => {
+  const r = interpret("move deep learning project to 11pm", real, []);
+  assert.equal(r.clarify, null);
+  assert.deepEqual([r.actions[0].type, r.actions[0].args], ["move_task", { taskId: T1, time: "23:00", flexible: false }]);
+  assert.match(r.reply, /all 2 sessions, 2 h/);
+  assert.equal(interpret("move deep learning project after physics lab", real, []).actions[0].type, "move_task");
+  assert.equal(interpret("do deep learning project now", real, []).actions[0].type, "move_task");
+  assert.ok(validateAction(r.actions[0]).action);
+});
+
+test("a task with ONE session still moves with move_session; slots (by time or position) are moved one at a time", () => {
+  assert.equal(interpret("move physics lab to 11pm", real, []).actions[0].type, "move_session");
+  assert.equal(interpret("move mlp project to 8pm", real, []).actions[0].type, "move_session");
+  const byTime = interpret("move the 8:30 one to 11pm", real, []);
+  assert.deepEqual([byTime.actions[0].type, byTime.actions[0].args.sessionId], ["move_session", sid(T1, 1230)]);
+  const first = interpret("move the first one to 11pm", real, []);
+  assert.deepEqual([first.actions[0].type, first.actions[0].args.sessionId], ["move_session", sid(T1, 1160)]);
+});
+
+test("skipping a task with two sessions skips the next one, without asking", () => {
+  const r = interpret("skip deep learning project", real, []);
+  assert.equal(r.clarify, null);
+  assert.deepEqual([r.actions[0].type, r.actions[0].args.sessionId], ["skip_session", sid(T1, 1160)]);
+});
+
+test("a day to put it off (tomorrow) is still about the task", () => {
+  assert.deepEqual(interpret("move deep learning project to tomorrow", real, []).actions[0].args, { taskId: T1, until: "2026-10-25" });
+});
+
+test("two DIFFERENT tasks with the same name, each in two sessions: asked once, by task, and swapped by id", () => {
+  const A = "aaaaaaaa-0000-4000-8000-000000000001";
+  const B = "bbbbbbbb-0000-4000-8000-000000000002";
+  const ctx = {
+    ...real,
+    tasks: [{ id: A, title: "Maths", minutes: 90, due: "2026-10-26", completed: false }, { id: B, title: "Maths", minutes: 60, due: "2026-10-29", completed: false }, real.tasks[2]],
+    plan: {
+      sessions: [
+        { id: sid(A, 1200), title: "Maths", kind: "TASK", refId: A, start: "20:00", end: "20:45", status: "PLANNED" },
+        { id: sid(B, 1250), title: "Maths", kind: "TASK", refId: B, start: "20:50", end: "21:20", status: "PLANNED" },
+        { id: sid(A, 1300), title: "Maths", kind: "TASK", refId: A, start: "21:40", end: "22:25", status: "PLANNED" },
+        { id: sid(B, 1360), title: "Maths", kind: "TASK", refId: B, start: "22:40", end: "23:10", status: "PLANNED" },
+        { id: sid(T3, 1420), title: "Physics lab", kind: "TASK", refId: T3, start: "23:40", end: "23:55", status: "PLANNED" },
+      ],
+      busy: [], freeBlocks: [],
+    },
+  };
+  const q = interpret("swap maths with physics lab", ctx, []);
+  assert.match(q.reply, /You have 2 called “Maths”\. Which one do you mean\?/);
+  assert.match(q.reply, /1\. 20:00–20:45, 21:40–22:25 · due Mon 26 Oct/);
+  assert.match(q.reply, /2\. 20:50–21:20, 22:40–23:10 · due Thu 29 Oct/);
+  assert.equal(q.clarify.options.length, 2);
+  const r = interpret(q.clarify.options[1].text, ctx, []);
+  assert.deepEqual([r.actions[0].type, r.actions[0].args.taskA, r.actions[0].args.taskB], ["swap_tasks", B, T3]);
+});
+
+test("swap_tasks and move_task are valid actions and refuse nonsense", () => {
+  assert.ok(validateAction({ type: "swap_tasks", args: { taskA: T1, taskB: T2 } }).action);
+  assert.ok(!validateAction({ type: "swap_tasks", args: { taskA: T1, taskB: T1 } }).action);
+  assert.ok(!validateAction({ type: "swap_tasks", args: { taskA: T1 } }).action);
+  assert.ok(validateAction({ type: "move_task", args: { taskId: T1, time: "23:00" } }).action);
+  assert.ok(!validateAction({ type: "move_task", args: { taskId: T1, time: "25:99" } }).action);
 });
 
 // ------------------------------------------------------------------------------- the endpoint

@@ -90,7 +90,7 @@ function say(reply, actions = [], clarify = null) {
 // before the sentence is understood (see isolate), and the app shows the label instead, so nobody ever sees them.
 // (Gluing the chosen name onto the end of the sentence fails for "move physics to tomorrow": the part after "to" is
 // not where the planner looks for the name. Two items with the very same name can't be told apart by name at all.)
-const ID_TOKEN = /\[\[(id|no):([\w-]{1,80})\]\]/g;
+const ID_TOKEN = /\[\[(id|no):([^\]\s]{1,100})\]\]/g;
 const idToken = (id) => `[[id:${id}]]`;
 const noToken = (id) => `[[no:${id}]]`;
 
@@ -122,6 +122,7 @@ function lengthText(min) {
 
 /** What tells one item from another with the same name: a session's time, a task's due date and length. */
 function describe(item) {
+  if (item.times && item.times.length) return item.times.join(", ") + (item.due ? ` \u00b7 due ${shortDate(item.due)}` : "");
   if (item.start && item.end) return `${item.start}\u2013${item.end}` + (item.due ? ` \u00b7 due ${shortDate(item.due)}` : "");
   const bits = [];
   if ("minutes" in item || "completed" in item) bits.push(item.due ? `due ${shortDate(item.due)}` : "no due date");
@@ -182,6 +183,25 @@ function normalize(context) {
 
 const openTasks = (ctx) => ctx.tasks.filter((t) => !t.completed);
 const plannedSessions = (ctx) => ctx.plan.sessions.filter((s) => s.status === "PLANNED");
+/**
+ * Today's planned sessions grouped by task: a long task can be planned as several sessions, but the student means
+ * "the task" when they name it. Habits stay one session each. (id = the task's id, or the habit session's id.)
+ */
+function sessionGroups(ctx) {
+  const groups = new Map();
+  for (const s of plannedSessions(ctx)) {
+    const key = s.kind === "TASK" && s.refId ? `task:${s.refId}` : `session:${s.id}`;
+    if (!groups.has(key)) {
+      groups.set(key, { id: s.kind === "TASK" && s.refId ? s.refId : s.id, title: s.title, kind: s.kind, refId: s.refId, due: s.due, sessions: [] });
+    }
+    groups.get(key).sessions.push(s);
+  }
+  return [...groups.values()].map((g) => {
+    g.sessions.sort((a, b) => (toMinutes(a.start) ?? 0) - (toMinutes(b.start) ?? 0));
+    return { ...g, start: g.sessions[0].start, end: g.sessions[g.sessions.length - 1].end, times: g.sessions.map((x) => `${x.start}\u2013${x.end}`) };
+  });
+}
+
 const toMinutes = (hm) => {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(hm || ""));
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
@@ -189,6 +209,6 @@ const toMinutes = (hm) => {
 const sessionMinutes = (s) => (toMinutes(s.end) ?? 0) - (toMinutes(s.start) ?? 0);
 
 module.exports = {
-  tokens, fmtMinutes, capital, remove, findBest, say, ask, takeIds, idToken, noToken, hash, pick, normalize, openTasks, plannedSessions,
+  tokens, fmtMinutes, capital, remove, findBest, say, ask, takeIds, idToken, noToken, hash, pick, normalize, openTasks, plannedSessions, sessionGroups,
   toMinutes, sessionMinutes, label, NOT_ABOUT_THE_TASK,
 };

@@ -378,6 +378,29 @@ class ChatService(
                         is MoveOutcome.Refused -> "✗ ${outcome.reason}"
                     }
                 }
+                "swap_tasks" -> {
+                    val a = args.str("taskA")
+                    val b = args.str("taskB")
+                    if (a == null || b == null) return "✗ Which two tasks?"
+                    val titleA = tasks.get(a)?.title ?: "the first task"
+                    val titleB = tasks.get(b)?.title ?: "the second task"
+                    when (val outcome = planManager.swapTasks(a, b)) {
+                        is MoveOutcome.Moved -> {
+                            focusOn(a, titleA)
+                            "✓ Swapped “$titleA” and “$titleB”: each now has the time the other had. They stay where they are when I re-plan."
+                        }
+                        is MoveOutcome.Refused -> "✗ ${outcome.reason}"
+                    }
+                }
+                "move_task" -> {
+                    val task = args.str("taskId")?.let { tasks.get(it) } ?: return "✗ I couldn't find that task."
+                    val time = args.str("time")?.let { TimeUtil.parse(it) } ?: return "✗ I didn't understand the time."
+                    focusOn(task.id, task.title)
+                    when (val outcome = planManager.moveTask(task.id, time, args.bool("flexible") == true)) {
+                        is MoveOutcome.Moved -> "✓ Moved all of “${task.title}” to ${TimeUtil.format(outcome.startMin)}. It stays there when I re-plan."
+                        is MoveOutcome.Refused -> "✗ ${outcome.reason}"
+                    }
+                }
                 "defer_task" -> {
                     val task = args.str("taskId")?.let { tasks.get(it) } ?: return "✗ I couldn't find that task."
                     val until = args.date("until") ?: return "✗ I didn't understand the day."
