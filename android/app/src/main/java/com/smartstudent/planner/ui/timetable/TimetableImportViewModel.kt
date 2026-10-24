@@ -56,35 +56,6 @@ class TimetableImportViewModel(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** The result of "Check connection", shown under the button. */
-    private val _check = MutableStateFlow<String?>(null)
-    val check: StateFlow<String?> = _check
-
-    /** Asks the server whether it has the import feature, and says what it answered. */
-    fun checkConnection() {
-        _check.value = "Checking…"
-        viewModelScope.launch {
-            _check.value = try {
-                val ai = repo.aiReaderAvailable()
-                "Connected. The server has the import feature." +
-                    if (ai) " The AI reader is on." else " The AI reader is off (photos are read on your phone)."
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: HttpException) {
-                when (e.code()) {
-                    404 -> "The server answered 404 (not found): it does NOT have the import feature. " +
-                        "The backend on that address needs updating, or the app is using the wrong server."
-                    401 -> "The server answered 401: you're signed out. Sign out and in again."
-                    else -> "The server answered an error (HTTP ${e.code()})."
-                }
-            } catch (e: IOException) {
-                "Can't reach the server: ${e.message ?: e.javaClass.simpleName}. Check your connection."
-            } catch (e: Exception) {
-                "Check failed: ${e.javaClass.simpleName}: ${e.message}"
-            }
-        }
-    }
-
     fun reset() {
         _ui.value = ImportUi.Idle
     }

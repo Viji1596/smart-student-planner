@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -83,6 +84,7 @@ fun HomeScreen(
     onOpenProfile: () -> Unit,
     onViewAllTasks: () -> Unit,
     onOpenReminders: () -> Unit,
+    onOpenChat: () -> Unit,
 ) {
     val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(container))
     val state by viewModel.state.collectAsState()
@@ -108,6 +110,7 @@ fun HomeScreen(
             onViewAllTasks = onViewAllTasks,
             remindersOff = remindersOn == false,
             onOpenReminders = onOpenReminders,
+            onOpenChat = onOpenChat,
         )
     }
 }
@@ -127,6 +130,7 @@ private fun HomeContent(
     onViewAllTasks: () -> Unit,
     remindersOff: Boolean,
     onOpenReminders: () -> Unit,
+    onOpenChat: () -> Unit,
 ) {
     val view = state.view
     val schedule = view.schedule
@@ -159,6 +163,8 @@ private fun HomeContent(
                     fontSize = 22.sp, fontWeight = FontWeight.Medium, color = scheme.onBackground,
                     modifier = Modifier.weight(1f),
                 )
+                RoundIconButton(Icons.Default.Face, "Assistant", onOpenChat)
+                Spacer(Modifier.width(10.dp))
                 RoundIconButton(Icons.Default.Settings, "Profile and settings", onOpenProfile)
                 Spacer(Modifier.width(10.dp))
                 RoundIconButton(Icons.Default.Refresh, "Sync", onSync)
@@ -409,7 +415,8 @@ private fun SessionCard(
                 Text(item.title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, lineHeight = 28.sp)
                 Text(
                     (if (item.kind == WorkKind.HABIT) "Habit" else "Task") + " · " +
-                        item.priority.name.lowercase().replaceFirstChar { it.uppercase() } + " priority",
+                        item.priority.name.lowercase().replaceFirstChar { it.uppercase() } + " priority" +
+                        if (session.pinned) " · Moved by you" else "",
                     fontSize = 14.sp, color = scheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(14.dp))

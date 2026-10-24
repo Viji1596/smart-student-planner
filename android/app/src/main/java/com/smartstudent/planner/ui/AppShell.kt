@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
@@ -63,6 +64,7 @@ import com.smartstudent.planner.data.repo.AuthRepository
 import com.smartstudent.planner.data.repo.SyncManager
 import com.smartstudent.planner.ui.common.BarsIcon
 import com.smartstudent.planner.ui.habits.HabitsScreen
+import com.smartstudent.planner.ui.chat.ChatScreen
 import com.smartstudent.planner.ui.home.HomeScreen
 import com.smartstudent.planner.ui.profile.ProfilePage
 import com.smartstudent.planner.ui.profile.ProfileScreen
@@ -165,6 +167,7 @@ fun AppShell(container: AppContainer) {
     var profilePage by rememberSaveable { mutableStateOf(ProfilePage.ROOT) }
     var addRequest by remember { mutableStateOf<AddKind?>(null) }
     var showAddMenu by remember { mutableStateOf(false) }
+    var chatOpen by rememberSaveable { mutableStateOf(false) }
     val snackbarHost = remember { SnackbarHostState() }
 
     // Pull the latest from other devices whenever the app comes to the foreground.
@@ -177,6 +180,8 @@ fun AppShell(container: AppContainer) {
         }
     }
 
+    BackHandler(enabled = chatOpen) { chatOpen = false }
+
     // Back from a Profile sub-page returns to the Profile list.
     BackHandler(enabled = tab == Tab.PROFILE && profilePage != ProfilePage.ROOT) {
         profilePage = if (profilePage == ProfilePage.IMPORT) ProfilePage.TIMETABLE else ProfilePage.ROOT
@@ -185,14 +190,16 @@ fun AppShell(container: AppContainer) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            PlannerBottomBar(
-                selected = tab,
-                onSelect = {
-                    tab = it
-                    if (it == Tab.PROFILE) profilePage = ProfilePage.ROOT
-                },
-                onAdd = { showAddMenu = true },
-            )
+            if (!chatOpen) {
+                PlannerBottomBar(
+                    selected = tab,
+                    onSelect = {
+                        tab = it
+                        if (it == Tab.PROFILE) profilePage = ProfilePage.ROOT
+                    },
+                    onAdd = { showAddMenu = true },
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHost) },
     ) { padding ->
@@ -207,7 +214,9 @@ fun AppShell(container: AppContainer) {
                 )
             }
 
-            when (tab) {
+            if (chatOpen) {
+                ChatScreen(container, onBack = { chatOpen = false })
+            } else when (tab) {
                 Tab.HOME -> HomeScreen(
                     container,
                     userName = userName,
@@ -221,6 +230,7 @@ fun AppShell(container: AppContainer) {
                         tab = Tab.PROFILE
                         profilePage = ProfilePage.REMINDERS
                     },
+                    onOpenChat = { chatOpen = true },
                 )
                 Tab.TASKS -> TasksScreen(
                     container,
@@ -263,6 +273,10 @@ fun AppShell(container: AppContainer) {
         ModalBottomSheet(onDismissRequest = { showAddMenu = false }) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Add something", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                AddMenuRow(Icons.Default.Face, "Ask the assistant", "Add or change things by typing") {
+                    showAddMenu = false
+                    chatOpen = true
+                }
                 AddMenuRow(Icons.Default.Check, "New task", "Something to get done") {
                     showAddMenu = false
                     tab = Tab.TASKS

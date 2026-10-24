@@ -26,6 +26,8 @@ class TaskRepository(
 ) {
     val tasks: Flow<List<TaskEntity>> = dao.observeActive()
 
+    suspend fun get(id: String): TaskEntity? = dao.get(id)?.takeIf { !it.deleted }
+
     suspend fun add(title: String, priority: String, minutes: Int, dueDate: Long?) {
         dao.upsert(
             TaskEntity(

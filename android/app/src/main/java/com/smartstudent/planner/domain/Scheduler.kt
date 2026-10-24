@@ -47,6 +47,8 @@ data class Session(
     val item: WorkItem,
     /** Set when this session comes from the committed plan for today. */
     val plannedId: String? = null,
+    /** True when the student placed this session by hand (it stays where it is when the plan is rebuilt). */
+    val pinned: Boolean = false,
 ) {
     val duration: Int get() = endMin - startMin
 }

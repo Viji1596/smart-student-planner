@@ -3,6 +3,7 @@ package com.smartstudent.planner
 import android.content.Context
 import androidx.room.Room
 import com.smartstudent.planner.data.local.AppDatabase
+import com.smartstudent.planner.data.chat.ChatService
 import com.smartstudent.planner.data.ocr.OcrReader
 import com.smartstudent.planner.data.local.MIGRATION_1_2
 import com.smartstudent.planner.data.local.MIGRATION_2_3
@@ -38,7 +39,7 @@ class AppContainer(context: Context) {
     val tokenStore = TokenStore(appContext)
 
     private val database = Room.databaseBuilder(appContext, AppDatabase::class.java, "planner.db")
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
         .build()
 
     private val json = Json {
@@ -106,5 +107,16 @@ class AppContainer(context: Context) {
         store = reminderStore,
         scheduler = reminderScheduler,
         scope = appScope,
+    )
+
+    // The assistant: the server interprets what you type, the phone does the work
+    val chatService = ChatService(
+        api = authedApi,
+        settings = settingsRepository,
+        timetable = timetableRepository,
+        tasks = taskRepository,
+        habits = habitRepository,
+        sessionDao = plannedSessionDao,
+        planManager = planManager,
     )
 }

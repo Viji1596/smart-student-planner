@@ -33,6 +33,8 @@ class HabitRepository(
     fun completionsSince(fromDate: LocalDate): Flow<List<HabitCompletionEntity>> =
         completionDao.observeSince(fromDate.toString())
 
+    suspend fun get(id: String): HabitEntity? = habitDao.get(id)?.takeIf { !it.deleted }
+
     suspend fun add(
         title: String,
         minutes: Int,

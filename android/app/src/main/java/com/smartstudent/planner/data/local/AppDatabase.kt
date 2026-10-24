@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         HabitCompletionEntity::class,
         PlannedSessionEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -122,5 +122,12 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
                 "`status` TEXT NOT NULL, " +
                 "PRIMARY KEY(`id`))"
         )
+    }
+}
+
+/** Phase 5 -> phase 6: sessions the student placed by hand stay where they are. Keeps existing data. */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `planned_sessions` ADD COLUMN `pinned` INTEGER NOT NULL DEFAULT 0")
     }
 }

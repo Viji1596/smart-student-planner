@@ -61,7 +61,6 @@ fun TimetableImportScreen(container: AppContainer, onBack: () -> Unit) {
     val context = LocalContext.current
     val viewModel: TimetableImportViewModel = viewModel(factory = TimetableImportViewModel.factory(container))
     val ui by viewModel.ui.collectAsState()
-    val check by viewModel.check.collectAsState()
     val scheme = MaterialTheme.colorScheme
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -95,12 +94,6 @@ fun TimetableImportScreen(container: AppContainer, onBack: () -> Unit) {
                             "Old Excel files (.xls): open them and use Save As > Excel Workbook (.xlsx) first.",
                             fontSize = 13.sp, color = scheme.onSurfaceVariant,
                         )
-                        Text(
-                            "Server: ${BuildConfig.BASE_URL}",
-                            fontSize = 12.sp, color = scheme.onSurfaceVariant,
-                        )
-                        OutlinedButton(onClick = { viewModel.checkConnection() }) { Text("Check connection") }
-                        check?.let { Text(it, fontSize = 13.sp) }
                         Button(
                             onClick = { picker.launch(FILE_TYPES) },
                             shape = CircleShape,

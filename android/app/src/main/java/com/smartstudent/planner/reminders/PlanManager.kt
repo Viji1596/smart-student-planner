@@ -19,6 +19,7 @@ import com.smartstudent.planner.data.repo.toEntity
 import com.smartstudent.planner.data.repo.toFixedEntry
 import com.smartstudent.planner.data.repo.toInfo
 import com.smartstudent.planner.data.repo.toRules
+import com.smartstudent.planner.domain.BlockKind
 import com.smartstudent.planner.domain.DayBuilder
 import com.smartstudent.planner.domain.DayPlanner
 import com.smartstudent.planner.domain.DaySummary
@@ -26,7 +27,10 @@ import com.smartstudent.planner.domain.MissedInfo
 import com.smartstudent.planner.domain.PlanReconciler
 import com.smartstudent.planner.domain.Reminder
 import com.smartstudent.planner.domain.ReminderPlanner
+import com.smartstudent.planner.domain.MoveResult
+import com.smartstudent.planner.domain.SessionMover
 import com.smartstudent.planner.domain.SessionStatus
+import com.smartstudent.planner.domain.TimeBlock
 import com.smartstudent.planner.domain.TimeUtil
 import com.smartstudent.planner.domain.WorkKind
 import kotlinx.coroutines.CancellationException
@@ -51,6 +55,12 @@ import java.time.ZoneId
  *  2. it then sets the alarms to match the plan;
  *  3. if sessions were newly missed, it tells you where their work was moved.
  */
+/** The result of asking to move a session to another time today. */
+sealed interface MoveOutcome {
+    data class Moved(val startMin: Int) : MoveOutcome
+    data class Refused(val reason: String) : MoveOutcome
+}
+
 class PlanManager(
     private val appContext: Context,
     private val tokenStore: TokenStore,
@@ -116,6 +126,53 @@ class PlanManager(
 
     /** "Re-plan" button: rebuild the rest of today from now. */
     suspend fun replanNow() = reconcile(userInitiated = true, force = true)
+
+    /**
+     * Moves today's planned session to [timeMin] (or the nearest free slot, if [flexible]). The session is
+     * then "pinned": re-planning works around it instead of moving it again. Refused when the time is taken
+     * by a class, a meal, travel or rest, by another session placed by hand, or has already passed.
+     */
+    suspend fun moveSession(sessionId: String, timeMin: Int, flexible: Boolean): MoveOutcome = mutex.withLock {
+        try {
+            val now = LocalDateTime.now()
+            val today = now.toLocalDate()
+            val nowMin = now.hour * 60 + now.minute
+
+            val rules = settings.settings.first().toRules()
+            val todayEntries = timetable.entries.first()
+                .mapNotNull { e -> e.toFixedEntry()?.let { e.dayOfWeek to it } }
+                .filter { it.first == today.dayOfWeek.value }
+                .map { it.second }
+            val plan = DayPlanner.plan(rules, todayEntries)
+
+            val sessions = sessionDao.getForDate(today.toString()).mapNotNull { it.toDomainOrNull() }
+            val target = sessions.firstOrNull { it.id == sessionId && it.status == SessionStatus.PLANNED }
+                ?: return@withLock MoveOutcome.Refused("That session isn't planned any more.")
+            val blockers = sessions
+                .filter { it.id != target.id && it.status == SessionStatus.PLANNED && (it.pinned || it.startMin <= nowMin) }
+                .map { TimeBlock(it.startMin, it.endMin, it.title, BlockKind.CLASS) }
+
+            when (val result = SessionMover.place(plan, blockers, target.duration, timeMin, nowMin, flexible)) {
+                is MoveResult.Refused -> MoveOutcome.Refused(result.reason)
+                is MoveResult.Placed -> {
+                    val moved = target.copy(
+                        id = PlanReconciler.sessionId(today, target.kind, target.refId, result.startMin),
+                        startMin = result.startMin,
+                        endMin = result.startMin + target.duration,
+                        pinned = true,
+                    )
+                    sessionDao.replaceOne(target.id, moved.toEntity())
+                    doReconcile(userInitiated = true, force = true, skipId = null)
+                    MoveOutcome.Moved(result.startMin)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Move failed: ${e.message}", e)
+            MoveOutcome.Refused("Something went wrong while moving it.")
+        }
+    }
 
     /** "Later" button: this session is skipped and its work is planned again. */
     suspend fun skip(sessionId: String) = reconcile(userInitiated = true, skipId = sessionId)

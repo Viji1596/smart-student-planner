@@ -1,7 +1,0 @@
-<resources>
-    <style name="Theme.SmartStudentPlanner" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">#15142B</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowBackground">#15142B</item>
-    </style>
-</resources>

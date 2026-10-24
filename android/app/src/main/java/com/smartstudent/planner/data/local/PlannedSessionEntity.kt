@@ -21,6 +21,8 @@ data class PlannedSessionEntity(
     val title: String,
     val priority: String,
     val status: String,   // PLANNED, DONE or MISSED
+    /** Placed by hand (e.g. via the assistant): re-planning keeps it where it is. */
+    val pinned: Boolean = false,
 )
 
 @Dao
@@ -58,6 +60,16 @@ abstract class PlannedSessionDao {
     open suspend fun resolveMissed(date: String, kind: String, refId: String, keepId: String) {
         deleteOtherMissed(date, kind, refId, keepId)
         updateStatus(keepId, "DONE")
+    }
+
+    @Query("DELETE FROM planned_sessions WHERE id = :id")
+    abstract suspend fun deleteById(id: String)
+
+    /** Moving a session changes its id (the id contains the start time): swap the old row for the new one. */
+    @Transaction
+    open suspend fun replaceOne(oldId: String, item: PlannedSessionEntity) {
+        deleteById(oldId)
+        insertAll(listOf(item))
     }
 
     @Transaction

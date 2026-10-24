@@ -69,4 +69,7 @@ interface PlannerApi {
 
     @GET("timetable/import/status")
     suspend fun importStatus(): ImportStatus
+
+    @POST("chat")
+    suspend fun chat(@Body body: ChatRequest): ChatResponse
 }

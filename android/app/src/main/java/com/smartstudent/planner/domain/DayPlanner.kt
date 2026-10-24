@@ -68,6 +68,8 @@ object DayPlanner {
         rules: DayRules,
         entries: List<FixedEntry>,
         minFreeGap: Int = DEFAULT_MIN_FREE_GAP,
+        /** Time that is taken but isn't a class: no travel is planned for it (e.g. a session placed by hand). */
+        extraBusy: List<FixedEntry> = emptyList(),
     ): DayPlan {
         val windowStart = rules.wakeMin
         val windowEnd = if (rules.sleepMin > rules.wakeMin) rules.sleepMin else rules.sleepMin + MINUTES_PER_DAY
@@ -108,6 +110,8 @@ object DayPlanner {
                 busy += TimeBlock(lastEnd, lastEnd + commute.fromMin, "Travel home", BlockKind.TRAVEL)
             }
         }
+
+        for (extra in extraBusy) busy += TimeBlock(extra.startMin, extra.endMin, extra.title, BlockKind.CLASS)
 
         // Keep only what falls inside the awake window.
         val clipped = busy.mapNotNull { block ->

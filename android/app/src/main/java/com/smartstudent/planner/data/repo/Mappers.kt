@@ -130,6 +130,7 @@ fun PlannedSessionEntity.toDomainOrNull(): PlannedSession? = runCatching {
         title = title,
         priority = Priority.parse(priority),
         status = SessionStatus.valueOf(status),
+        pinned = pinned,
     )
 }.getOrNull()
 
@@ -143,4 +144,5 @@ fun PlannedSession.toEntity() = PlannedSessionEntity(
     title = title,
     priority = priority.name,
     status = status.name,
+    pinned = pinned,
 )

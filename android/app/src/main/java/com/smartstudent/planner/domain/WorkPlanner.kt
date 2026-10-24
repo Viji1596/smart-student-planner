@@ -202,8 +202,9 @@ object DayBuilder {
         date: LocalDate,
         nowMin: Int?,
         doneToday: Map<String, Int> = emptyMap(),
+        extraBusy: List<FixedEntry> = emptyList(),
     ): DayView {
-        val plan = DayPlanner.plan(rules, entries)
+        val plan = DayPlanner.plan(rules, entries, extraBusy = extraBusy)
         val earliest = nowMin?.let { ((it + 4) / 5) * 5 }
 
         val items = WorkPlanner.taskItems(tasks, date, doneToday = doneToday) +

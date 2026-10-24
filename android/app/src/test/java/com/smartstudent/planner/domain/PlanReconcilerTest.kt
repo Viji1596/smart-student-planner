@@ -384,3 +384,164 @@ class PlanReconcilerTest {
         assertTrue(PlanReconciler.summarizeHistory(sessions, emptySet()).isEmpty())
     }
 }
+
+class PinnedAndMoveTest {
+    private fun t(hm: String) = TimeUtil.parse(hm)!!
+    private fun hm(min: Int) = TimeUtil.format(min)
+    private val today = LocalDate.of(2026, 10, 19)
+
+    private val rules = DayRules(
+        wakeMin = t("06:30"), sleepMin = t("23:00"), morningRoutineMin = 45,
+        meals = listOf(MealSlot("Breakfast", t("08:00"), 20), MealSlot("Lunch", t("13:00"), 40), MealSlot("Dinner", t("20:00"), 40)),
+    )
+    private val classes = listOf(FixedEntry("Maths", t("09:00"), t("11:00")), FixedEntry("Physics", t("14:00"), t("16:00")))
+
+    private fun task(id: String, title: String, est: Int, due: LocalDate? = today) = TaskInfo(id, title, "High", est, 0, due)
+
+    private fun session(ref: String, title: String, start: String, end: String, pinned: Boolean = false, status: SessionStatus = SessionStatus.PLANNED) =
+        PlannedSession(PlanReconciler.sessionId(today, WorkKind.TASK, ref, t(start)), today, t(start), t(end), WorkKind.TASK, ref, title, Priority.HIGH, status, pinned)
+
+    private fun replan(existing: List<PlannedSession>, tasks: List<TaskInfo>, now: String, entries: List<FixedEntry> = classes) =
+        PlanReconciler.replanToday(rules, entries, tasks, emptyList(), emptyMap(), existing, today, t(now))
+
+    // ------------------------------------------------------------------ pinned sessions
+
+    @Test
+    fun aPinnedSessionStaysWhereItWasPlacedWhenThePlanIsRebuilt() {
+        val pinned = session("a", "Assignment", "18:00", "18:45", pinned = true)
+        val result = replan(listOf(pinned), listOf(task("a", "Assignment", 45), task("b", "Reading", 60, due = null)), "12:00")
+        val a = result.sessions.single { it.refId == "a" }
+        assertEquals("18:00", hm(a.startMin))
+        assertTrue(a.pinned)
+        assertEquals(45, result.sessions.filter { it.refId == "a" }.sumOf { it.duration }) // not planned twice
+    }
+
+    @Test
+    fun otherWorkIsPlannedAroundAPinnedSession() {
+        val pinned = session("a", "Assignment", "16:30", "17:30", pinned = true)
+        val result = replan(listOf(pinned), listOf(task("a", "Assignment", 60), task("b", "Reading", 120, due = null)), "12:00")
+        for (s in result.sessions.filter { it.refId == "b" }) {
+            assertFalse("${s.title} overlaps the pinned session", s.startMin < pinned.endMin && pinned.startMin < s.endMin)
+        }
+    }
+
+    @Test
+    fun aPinnedSessionDoesNotCreateTravel() {
+        val withTravel = rules.copy(commute = Commute(30, 30, 10))
+        val pinned = session("a", "Assignment", "21:00", "21:45", pinned = true)
+        val result = PlanReconciler.replanToday(
+            withTravel, classes, listOf(task("a", "Assignment", 45)), emptyList(), emptyMap(), listOf(pinned), today, t("12:00"),
+        )
+        // travel home follows the last class (16:00), not the pinned session at 21:00
+        val plan = DayPlanner.plan(withTravel, classes, extraBusy = listOf(FixedEntry("x", t("21:00"), t("21:45"))))
+        assertEquals(listOf("16:00"), plan.blocks.filter { it.kind == BlockKind.TRAVEL && it.label == "Travel home" }.map { hm(it.startMin) })
+        assertEquals("21:00", hm(result.sessions.single { it.refId == "a" }.startMin))
+    }
+
+    @Test
+    fun aPinnedSessionIsDroppedWhenItsTaskIsFinished() {
+        val pinned = session("a", "Assignment", "18:00", "18:45", pinned = true)
+        val finishedTask = task("a", "Assignment", 45).copy(spentMinutes = 45)
+        val result = replan(listOf(pinned), listOf(finishedTask), "12:00")
+        assertTrue(result.sessions.none { it.refId == "a" })
+    }
+
+    @Test
+    fun aPinnedSessionThatIsOverIsMissedLikeAnyOther() {
+        val pinned = session("a", "Assignment", "10:00", "10:30", pinned = true)
+        val result = replan(listOf(pinned), listOf(task("a", "Assignment", 30)), "11:00", entries = emptyList())
+        assertEquals(SessionStatus.MISSED, result.sessions.first().status)
+        assertTrue(result.sessions.any { it.status == SessionStatus.PLANNED && !it.pinned })
+    }
+
+    @Test
+    fun skippingAPinnedSessionPlansItAgain() {
+        val pinned = session("a", "Assignment", "18:00", "18:45", pinned = true)
+        val result = PlanReconciler.replanToday(
+            rules, classes, listOf(task("a", "Assignment", 45)), emptyList(), emptyMap(), listOf(pinned), today, t("12:00"), setOf(pinned.id),
+        )
+        assertEquals(SessionStatus.MISSED, result.sessions.first { it.id == pinned.id }.status)
+        assertTrue(result.sessions.any { it.status == SessionStatus.PLANNED && it.refId == "a" })
+    }
+
+    @Test
+    fun rebuildingTheDayTwiceKeepsPinnedSessionsAndGivesTheSamePlan() {
+        val tasks = listOf(task("a", "Assignment", 45), task("b", "Reading", 60, due = null))
+        val first = replan(listOf(session("a", "Assignment", "19:00", "19:45", pinned = true)), tasks, "12:00")
+        val second = replan(first.sessions, tasks, "12:00")
+        assertEquals(first.sessions, second.sessions)
+    }
+
+    // ------------------------------------------------------------------- moving a session
+
+    private val plan = DayPlanner.plan(rules, classes)
+    private fun place(duration: Int, at: String, now: String = "12:00", flexible: Boolean = false, blockers: List<TimeBlock> = emptyList()) =
+        SessionMover.place(plan, blockers, duration, t(at), t(now), flexible)
+
+    @Test
+    fun aFreeTimeIsAccepted() {
+        assertEquals(MoveResult.Placed(t("18:00")), place(45, "18:00"))
+        assertEquals(MoveResult.Placed(t("16:00")), place(45, "16:00")) // straight after Physics
+    }
+
+    @Test
+    fun aClassIsRefusedByName_withTheNextFreeSlot() {
+        val r = place(45, "14:30") as MoveResult.Refused
+        assertTrue(r.reason, r.reason.contains("Physics (14:00–16:00)"))
+        assertTrue(r.reason, r.reason.contains("16:00")) // next free slot
+    }
+
+    @Test
+    fun aMealIsRefused() {
+        val r = place(30, "13:10") as MoveResult.Refused
+        assertTrue(r.reason, r.reason.contains("Lunch"))
+    }
+
+    @Test
+    fun theFutureOnly() {
+        val r = place(30, "10:00", now = "12:00") as MoveResult.Refused
+        assertTrue(r.reason, r.reason.contains("already passed"))
+    }
+
+    @Test
+    fun outsideTheDay() {
+        val r = place(30, "23:30") as MoveResult.Refused
+        assertTrue(r.reason, r.reason.contains("outside your day"))
+    }
+
+    @Test
+    fun anotherSessionPlacedByHandIsNotOverlapped() {
+        val other = TimeBlock(t("18:00"), t("18:45"), "Reading", BlockKind.CLASS)
+        val r = place(30, "18:15", blockers = listOf(other)) as MoveResult.Refused
+        assertTrue(r.reason, r.reason.contains("Reading (18:00–18:45)"))
+        assertEquals(MoveResult.Placed(t("18:45")), place(30, "18:45", blockers = listOf(other)))
+    }
+
+    @Test
+    fun theEveningMeansTheNearestFreeSlotFromThen() {
+        assertEquals(MoveResult.Placed(t("18:00")), place(60, "18:00", flexible = true))
+        // 19:30-20:00 is too short before dinner, and the slot after dinner starts at 20:40
+        assertEquals(MoveResult.Placed(t("20:40")), place(60, "19:30", flexible = true))
+    }
+
+    @Test
+    fun noRoomLeftIsSaidClearly() {
+        val r = place(120, "22:00", flexible = true) as MoveResult.Refused
+        assertTrue(r.reason, r.reason.contains("no free slot"))
+    }
+
+    @Test
+    fun movedSessionsAreAlwaysInFreeTime_neverOnABusyBlock() {
+        val random = java.util.Random(9)
+        repeat(300) {
+            val duration = 10 + random.nextInt(120)
+            val request = 360 + random.nextInt(1000)
+            val now = 360 + random.nextInt(600)
+            val result = SessionMover.place(plan, emptyList(), duration, request, now, random.nextBoolean())
+            if (result is MoveResult.Placed) {
+                assertTrue(result.startMin >= now)
+                assertTrue(plan.freeBlocks.any { result.startMin >= it.startMin && result.startMin + duration <= it.endMin })
+            }
+        }
+    }
+}

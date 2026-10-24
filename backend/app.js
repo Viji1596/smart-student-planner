@@ -11,6 +11,7 @@ const settingsRoutes = require("./routes/settingsRoutes");
 const { buildRouter: buildTimetableImportRouter } = require("./routes/timetableImportRoutes");
 const habitRoutes = require("./routes/habitRoutes");
 const habitCompletionRoutes = require("./routes/habitCompletionRoutes");
+const { buildRouter: buildChatRouter } = require("./routes/chatRoutes");
 
 const app = express();
 
@@ -39,7 +40,7 @@ app.use(express.json({ limit: "100kb" }));
 
 app.get("/", (req, res) => res.json({ message: "Smart Student Planner API" }));
 app.get("/health", (req, res) =>
-  res.json({ ok: true, version: "5e", features: ["timetable-import", "pdf-text", "text-boxes"] })
+  res.json({ ok: true, version: "6", features: ["timetable-import", "pdf-text", "text-boxes", "chat"] })
 );
 
 app.use(
@@ -53,6 +54,7 @@ app.use("/api/timetable", timetableRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/habits", habitRoutes);
 app.use("/api/habit-completions", habitCompletionRoutes);
+app.use("/api/chat", buildChatRouter());
 
 app.use((req, res) => res.status(404).json({ message: "Not found" }));
 
