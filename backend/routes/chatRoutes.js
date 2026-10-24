@@ -38,6 +38,15 @@ const report = z.object({
     .array(z.object({ title: z.string().max(200), done: z.number(), expected: z.number(), streak: z.number() }))
     .max(30)
     .default([]),
+  // finished within the deadline (30 minutes' grace after the due day), late, missed; scheduled against finished; the grade
+  finishedOnTime: z.number().optional(),
+  finishedLate: z.number().optional(),
+  missedInPeriod: z.number().optional(),
+  scheduledTasks: z.number().optional(),
+  finishedScheduled: z.number().optional(),
+  score: z.number().nullable().optional(),
+  grade: z.string().max(3).optional(),
+  insights: z.array(z.string().max(400)).max(6).optional(),
 });
 const day = z.object({
   sessions: z.array(session).max(60).default([]),

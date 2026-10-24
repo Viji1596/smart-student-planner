@@ -137,7 +137,7 @@ function reportIntent(raw, l, ctx) {
   // a task whose own name contains "report" or "summary" is about that task, not about the performance report
   const aboutATask = findBest(l, openTasks(ctx));
   const keywords = !(aboutATask && (aboutATask.item || aboutATask.ambiguous)) &&
-    /\b(report|summary|stats|statistics|performance|streaks?|productiv\w*|my progress|show (me )?(my )?progress)\b/.test(l);
+    /\b(report|summary|stats|statistics|performance|analysis|analy[sz]e|grades?|score|streaks?|productiv\w*|my progress|show (me )?(my )?progress)\b/.test(l);
   const cue =
     keywords ||
     /\bhow (am i|have i been|did i|was my|is my|are my|were my)\b.*\b(doing|going|week|day|month|study|studying|habits?|work|progress|results?)\b/.test(l) ||
@@ -147,8 +147,8 @@ function reportIntent(raw, l, ctx) {
   let days = 7;
   const n = /\b(\d{1,2})\s*days?\b/.exec(l);
   if (n) days = Math.min(60, Math.max(1, Number(n[1])));
-  else if (/\b(today|so far today|this morning)\b/.test(l)) days = 1;
-  else if (/\bmonth\b/.test(l)) days = 30;
+  else if (/\b(today|daily|so far today|this morning|my day|the day|this day|day going|day went)\b/.test(l)) days = 1;
+  else if (/\bmonth(ly)?\b/.test(l)) days = 30;
   else if (/\b(two weeks|2 weeks|fortnight)\b/.test(l)) days = 14;
   const lead = pick(["Let me pull that together.", "Sure, here's the honest picture.", "Okay, let's look at the numbers."], l);
   return say(lead, [{ type: "show_report", args: { days } }]);
@@ -557,7 +557,7 @@ function looseAddIntent(raw, l, ctx) {
 /** The report, asked any way at all: "how i am doing", "progress", "am i on track", "how much did i study this week". */
 function looseReportIntent(raw, l, ctx) {
   if (isCommand(l)) return null;
-  const words = /\b(report|summary|summari[sz]e|stats?|statistics|performance|performing|progress|streaks?|productiv\w*|on track|doing (well|ok|okay|good|bad|fine|great))\b/;
+  const words = /\b(report|summary|summari[sz]e|stats?|statistics|performance|performing|progress|analysis|analy[sz]e|grades?|score|streaks?|productiv\w*|on track|doing (well|ok|okay|good|bad|fine|great))\b/;
   const how = /\bhow\b.*\b(am i|i am|are my|have i|did i|was my|were my|is my|has my|much did i|much have i|much do i)\b/;
   const howMuch = /\bhow much\b.*\b(done|studied|study|worked|work|completed|finished|learn\w*|revised|revise)\b/;
   const tracking = /\b(am i|are we)\b.*\b(on track|behind|ahead|falling behind|keeping up)\b/;
@@ -570,8 +570,8 @@ function looseReportIntent(raw, l, ctx) {
   let days = 7;
   const n = /\b(\d{1,2})\s*days?\b/.exec(l);
   if (n) days = Math.min(60, Math.max(1, Number(n[1])));
-  else if (/\b(today|so far today|this morning)\b/.test(l)) days = 1;
-  else if (/\bmonth\b/.test(l)) days = 30;
+  else if (/\b(today|daily|so far today|this morning|my day|the day|this day|day going|day went)\b/.test(l)) days = 1;
+  else if (/\bmonth(ly)?\b/.test(l)) days = 30;
   else if (/\b(two weeks|2 weeks|fortnight)\b/.test(l)) days = 14;
   const lead = pick(["Let me pull that together.", "Sure, here's the honest picture.", "Okay, let's look at the numbers."], l);
   return say(lead, [{ type: "show_report", args: { days } }]);

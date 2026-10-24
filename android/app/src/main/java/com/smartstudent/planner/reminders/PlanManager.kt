@@ -33,6 +33,7 @@ import com.smartstudent.planner.domain.MoveResult
 import com.smartstudent.planner.domain.Scheduler
 import com.smartstudent.planner.domain.SessionMover
 import com.smartstudent.planner.domain.SessionStatus
+import com.smartstudent.planner.domain.SummarySchedule
 import com.smartstudent.planner.domain.TimeBlock
 import com.smartstudent.planner.domain.TimeUtil
 import com.smartstudent.planner.domain.WorkKind
@@ -367,6 +368,58 @@ class PlanManager(
     }
 
     /**
+     * Takes back ONE tick ("Undo" right after ticking a session): the session is planned again and the work it recorded
+     * is taken off the task (or the habit is un-ticked). If its time has already passed, the next re-plan treats it as
+     * missed, which is what happened.
+     */
+    suspend fun undoSession(sessionId: String) {
+        mutex.withLock {
+            try {
+                val row = sessionDao.getById(sessionId)?.toDomainOrNull() ?: return@withLock
+                if (row.status != SessionStatus.DONE) return@withLock
+                sessionDao.updateStatus(sessionId, SessionStatus.PLANNED.name)
+                when (row.kind) {
+                    WorkKind.TASK -> tasks.undoProgress(row.refId, row.duration)
+                    WorkKind.HABIT -> habits.setDone(row.refId, row.date, false)
+                }
+                doReconcile(userInitiated = true, force = true, skipId = null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Undo of a tick failed: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
+     * Takes back "done" for a task or habit: today's finished sessions of it are removed, the work they recorded is
+     * taken off its progress (so the task is open again), and the plan is rebuilt. With [adjustProgress] false only
+     * the records go (used when the caller changes the task itself, like un-ticking it on the Tasks tab).
+     * Returns the minutes taken back.
+     */
+    suspend fun undoDone(kind: WorkKind, refId: String, adjustProgress: Boolean = true): Int = mutex.withLock {
+        try {
+            val today = LocalDate.now()
+            val existing = sessionDao.getForDate(today.toString()).mapNotNull { it.toDomainOrNull() }
+            val (after, minutes) = PlanReconciler.undoDone(existing, kind, refId)
+            sessionDao.replaceForDate(today.toString(), after.map { it.toEntity() })
+            if (adjustProgress) {
+                when (kind) {
+                    WorkKind.TASK -> tasks.undoProgress(refId, minutes)
+                    WorkKind.HABIT -> habits.setDone(refId, today, false)
+                }
+            }
+            doReconcile(userInitiated = true, force = true, skipId = null)
+            minutes
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Undo failed: ${e.message}", e)
+            0
+        }
+    }
+
+    /**
      * "I did it" on a line that says "Missed N times": all of those records become one finished
      * session. Returns the minutes to record as done (one session's worth, not N), or 0 if none.
      */
@@ -456,6 +509,12 @@ class PlanManager(
             // Just after midnight, plan the new day so its reminders (e.g. "time to leave") get set.
             toMillis(today.plusDays(1), 10, zone)
         scheduler.replaceAll(reminders, checks)
+        // the bedtime summary: one alarm, at the next bedtime, only when the student wants any of the summaries
+        scheduler.scheduleSummary(
+            if (prefs.enabled && (prefs.daySummary || prefs.weekSummary || prefs.monthSummary)) {
+                SummarySchedule.nextBedtime(now, rules.sleepMin).atZone(zone).toInstant().toEpochMilli()
+            } else null
+        )
         Log.i(TAG, "Alarms set: ${reminders.size} reminders, ${checks.size} checks (exact=${scheduler.canScheduleExact()})")
 
         val dayTime = java.time.format.DateTimeFormatter.ofPattern("EEE HH:mm")

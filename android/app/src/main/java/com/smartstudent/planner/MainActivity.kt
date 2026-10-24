@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.smartstudent.planner.data.local.ThemeMode
 import com.smartstudent.planner.ui.RootViewModel
 import com.smartstudent.planner.ui.auth.LoginScreen
 import com.smartstudent.planner.ui.AppShell
@@ -23,7 +24,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val container = (application as PlannerApp).container
         setContent {
-            PlannerTheme {
+            val themeMode by container.appearanceStore.mode.collectAsState(initial = ThemeMode.SYSTEM)
+            PlannerTheme(themeMode) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Root(container)
                 }

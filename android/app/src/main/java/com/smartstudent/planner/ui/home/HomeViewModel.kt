@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
@@ -199,12 +200,31 @@ class HomeViewModel(
         selectedOffset.value = offset
     }
 
+    /** The session that was just ticked: Home offers "Undo" for a few seconds, in case it was an accident. */
+    private val _justCompleted = MutableStateFlow<Session?>(null)
+    val justCompleted: StateFlow<Session?> = _justCompleted.asStateFlow()
+
     /** The user finished a planned session (only offered for today). */
     fun completeSession(session: Session) {
         viewModelScope.launch {
             session.plannedId?.let { planManager.markDone(it) }
             recordProgress(session.item.kind, session.item.refId, session.duration)
+            _justCompleted.value = session
+            delay(UNDO_WINDOW_MS)
+            if (_justCompleted.value == session) _justCompleted.value = null
         }
+    }
+
+    /** "Undo" on the bar that follows a tick. */
+    fun undoLastCompleted() {
+        val session = _justCompleted.value ?: return
+        _justCompleted.value = null
+        session.plannedId?.let { id -> viewModelScope.launch { planManager.undoSession(id) } }
+    }
+
+    /** "Undo" on a "Done" line under Earlier today: the task is open again and the plan puts it back. */
+    fun undoDone(entry: HistoryEntry) {
+        viewModelScope.launch { planManager.undoDone(entry.kind, entry.refId) }
     }
 
     /** "Later": skip this session; its work is planned again for later today. */
@@ -237,6 +257,8 @@ class HomeViewModel(
     }
 
     companion object {
+        private const val UNDO_WINDOW_MS = 8_000L
+
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 HomeViewModel(

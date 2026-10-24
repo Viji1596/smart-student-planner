@@ -45,6 +45,11 @@
             android:name=".reminders.MissedCheckReceiver"
             android:exported="false" />
 
+        <!-- Bedtime: publishes the daily summary, and the weekly and monthly analysis -->
+        <receiver
+            android:name=".reminders.SummaryReceiver"
+            android:exported="false" />
+
         <!-- Alarms are lost on reboot or app update, so plan and set them again -->
         <receiver
             android:name=".reminders.BootReceiver"

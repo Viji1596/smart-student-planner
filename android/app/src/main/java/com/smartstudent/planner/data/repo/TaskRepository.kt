@@ -6,6 +6,7 @@ import com.smartstudent.planner.data.local.TaskDao
 import com.smartstudent.planner.data.local.TaskEntity
 import com.smartstudent.planner.data.remote.PlannerApi
 import com.smartstudent.planner.data.remote.TaskDto
+import com.smartstudent.planner.domain.ProgressRules
 import com.smartstudent.planner.data.remote.TaskUpsertRequest
 import com.smartstudent.planner.data.remote.TokenStore
 import com.smartstudent.planner.sync.SyncScheduler
@@ -72,8 +73,14 @@ class TaskRepository(
     }
 
     suspend fun setCompleted(task: TaskEntity, completed: Boolean) {
-        // Finishing a task means all of it is done; un-finishing keeps the progress made so far.
-        val spent = if (completed) task.estimatedMinutes else minOf(task.spentMinutes, task.estimatedMinutes - 1)
+        // Finishing a task means all of it is done. Un-finishing puts the progress back to what it was before it was
+        // finished (it used to stay one minute short, which left a pointless one-minute session in the plan).
+        val spent = if (completed) task.estimatedMinutes else ProgressRules.afterUncomplete(task.spentBeforeDone, task.estimatedMinutes)
+        val before = when {
+            !completed -> null
+            task.completed -> task.spentBeforeDone // already finished: keep what we remembered
+            else -> task.spentMinutes
+        }
         dao.upsert(
             task.copy(
                 completed = completed,
@@ -81,6 +88,23 @@ class TaskRepository(
                 dirty = true,
                 updatedAtLocal = System.currentTimeMillis(),
                 completedAt = if (completed) System.currentTimeMillis() else null,
+                spentBeforeDone = before,
+            )
+        )
+        SyncScheduler.syncSoon(appContext)
+    }
+
+    /** Takes back [minutes] of work that was recorded as done (the "Undo" on a finished session). The task is open again. */
+    suspend fun undoProgress(taskId: String, minutes: Int) {
+        val task = dao.get(taskId) ?: return
+        dao.upsert(
+            task.copy(
+                spentMinutes = ProgressRules.afterUndo(task.spentMinutes, minutes).coerceAtMost(maxOf(0, task.estimatedMinutes - 1)),
+                completed = false,
+                completedAt = null,
+                spentBeforeDone = null,
+                dirty = true,
+                updatedAtLocal = System.currentTimeMillis(),
             )
         )
         SyncScheduler.syncSoon(appContext)
@@ -106,6 +130,7 @@ class TaskRepository(
                 dirty = true,
                 updatedAtLocal = System.currentTimeMillis(),
                 completedAt = if (spent >= task.estimatedMinutes) System.currentTimeMillis() else task.completedAt,
+                spentBeforeDone = if (spent >= task.estimatedMinutes && !task.completed) task.spentMinutes else task.spentBeforeDone,
             )
         )
         SyncScheduler.syncSoon(appContext)
@@ -150,6 +175,7 @@ class TaskRepository(
                     remote.toEntity().copy(
                         deferUntil = local?.deferUntil,
                         completedAt = local?.completedAt ?: if (finishedElsewhere) System.currentTimeMillis() else null,
+                        spentBeforeDone = local?.spentBeforeDone,
                     )
                 )
             }

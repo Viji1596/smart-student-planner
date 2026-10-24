@@ -3,14 +3,18 @@ package com.smartstudent.planner
 import android.content.Context
 import androidx.room.Room
 import com.smartstudent.planner.data.local.AppDatabase
+import com.smartstudent.planner.data.local.AppearanceStore
 import com.smartstudent.planner.data.chat.ChatService
 import com.smartstudent.planner.data.ocr.OcrReader
+import com.smartstudent.planner.data.report.ReportBuilder
+import com.smartstudent.planner.data.report.SummaryService
 import com.smartstudent.planner.data.local.MIGRATION_1_2
 import com.smartstudent.planner.data.local.MIGRATION_2_3
 import com.smartstudent.planner.data.local.MIGRATION_3_4
 import com.smartstudent.planner.data.local.MIGRATION_4_5
 import com.smartstudent.planner.data.local.MIGRATION_5_6
 import com.smartstudent.planner.data.local.MIGRATION_6_7
+import com.smartstudent.planner.data.local.MIGRATION_7_8
 import com.smartstudent.planner.data.remote.AuthInterceptor
 import com.smartstudent.planner.data.remote.PlannerApi
 import com.smartstudent.planner.data.remote.TokenAuthenticator
@@ -41,7 +45,7 @@ class AppContainer(context: Context) {
     val tokenStore = TokenStore(appContext)
 
     private val database = Room.databaseBuilder(appContext, AppDatabase::class.java, "planner.db")
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
         .build()
 
     private val json = Json {
@@ -95,6 +99,7 @@ class AppContainer(context: Context) {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val plannedSessionDao = database.plannedSessionDao()
+    val reportDao = database.reportDao()
     val reminderStore = ReminderStore(appContext)
     val reminderScheduler = ReminderScheduler(appContext, reminderStore)
 
@@ -111,6 +116,13 @@ class AppContainer(context: Context) {
         scope = appScope,
     )
 
+    // The report (grade, finished against scheduled, deadlines): one builder for the chat, Progress and the bedtime summaries
+    val reportBuilder = ReportBuilder(plannedSessionDao, taskRepository, habitRepository)
+    val summaryService = SummaryService(appContext, reportBuilder, reportDao, reminderStore)
+
+    /** Light, dark, or follow the phone. */
+    val appearanceStore = AppearanceStore(appContext)
+
     // The assistant: the server interprets what you type, the phone does the work
     val chatService = ChatService(
         api = authedApi,
@@ -120,5 +132,6 @@ class AppContainer(context: Context) {
         habits = habitRepository,
         sessionDao = plannedSessionDao,
         planManager = planManager,
+        reports = reportBuilder,
     )
 }

@@ -42,6 +42,9 @@ class ReminderStore(private val context: Context) {
         val TRAVEL = booleanPreferencesKey("travel")
         val MEALS = booleanPreferencesKey("meals_and_rest")
         val MORNING = booleanPreferencesKey("morning_summary")
+        val DAY_SUMMARY = booleanPreferencesKey("day_summary")
+        val WEEK_SUMMARY = booleanPreferencesKey("week_summary")
+        val MONTH_SUMMARY = booleanPreferencesKey("month_summary")
         val PLAN_DATE = stringPreferencesKey("plan_date")
         val PLAN_FINGERPRINT = stringPreferencesKey("plan_fingerprint")
         val ALARM_CODES = stringSetPreferencesKey("alarm_codes")
@@ -63,6 +66,9 @@ class ReminderStore(private val context: Context) {
             travel = this[K.TRAVEL] ?: d.travel,
             mealsAndRest = this[K.MEALS] ?: d.mealsAndRest,
             morningSummary = this[K.MORNING] ?: d.morningSummary,
+            daySummary = this[K.DAY_SUMMARY] ?: d.daySummary,
+            weekSummary = this[K.WEEK_SUMMARY] ?: d.weekSummary,
+            monthSummary = this[K.MONTH_SUMMARY] ?: d.monthSummary,
         )
     }
 
@@ -82,6 +88,9 @@ class ReminderStore(private val context: Context) {
             prefs[K.TRAVEL] = s.travel
             prefs[K.MEALS] = s.mealsAndRest
             prefs[K.MORNING] = s.morningSummary
+            prefs[K.DAY_SUMMARY] = s.daySummary
+            prefs[K.WEEK_SUMMARY] = s.weekSummary
+            prefs[K.MONTH_SUMMARY] = s.monthSummary
         }
     }
 

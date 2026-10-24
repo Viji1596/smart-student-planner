@@ -62,6 +62,7 @@ fun RemindersScreen(container: AppContainer, onBack: () -> Unit) {
     var permissionDenied by remember { mutableStateOf(false) }
     var testMessage by remember { mutableStateOf<String?>(null) }
     var alarmTestMessage by remember { mutableStateOf<String?>(null) }
+    var summaryMessage by remember { mutableStateOf<String?>(null) }
 
     // Re-read the system state when coming back from the system settings screens.
     var refresh by remember { mutableIntStateOf(0) }
@@ -201,6 +202,18 @@ fun RemindersScreen(container: AppContainer, onBack: () -> Unit) {
                     "Morning summary", "At your wake-up time: how many sessions are planned.",
                     prefs.morningSummary, { viewModel.setMorningSummary(it) },
                 )
+                SwitchRow(
+                    "Bedtime summary", "At bedtime, every day: how many tasks you finished out of those scheduled.",
+                    prefs.daySummary, { viewModel.setDaySummary(it) },
+                )
+                SwitchRow(
+                    "Weekly analysis", "On Sundays at bedtime: your week, your grade and what I notice about how you work.",
+                    prefs.weekSummary, { viewModel.setWeekSummary(it) },
+                )
+                SwitchRow(
+                    "Monthly analysis", "On the last day of the month at bedtime: your month in numbers and trends.",
+                    prefs.monthSummary, { viewModel.setMonthSummary(it) },
+                )
             }
         }
 
@@ -267,6 +280,16 @@ fun RemindersScreen(container: AppContainer, onBack: () -> Unit) {
                         if (exact) "." else " (exact timing is off, so it may be a few minutes late)."
                 }) { Text("Send a test alarm in 1 minute") }
                 alarmTestMessage?.let { Text(it, fontSize = 13.sp, color = scheme.onSurfaceVariant) }
+
+                Text(
+                    "To see what the bedtime summary looks like, show today's now. It also appears under Progress → Summaries.",
+                    fontSize = 13.sp, color = scheme.onSurfaceVariant,
+                )
+                OutlinedButton(onClick = {
+                    viewModel.showSummaryNow()
+                    summaryMessage = "Done. Check your notifications."
+                }) { Text("Show today's summary now") }
+                summaryMessage?.let { Text(it, fontSize = 13.sp, color = scheme.onSurfaceVariant) }
             }
         }
         Spacer(Modifier.height(8.dp))

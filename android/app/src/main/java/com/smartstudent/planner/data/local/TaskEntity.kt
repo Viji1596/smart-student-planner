@@ -26,4 +26,6 @@ data class TaskEntity(
     val deferUntil: String? = null,
     /** Local only (not synced): when it was marked done on this phone. Used for the performance report. */
     val completedAt: Long? = null,
+    /** Local only: the progress it had just before it was finished, so un-finishing can put it back. */
+    val spentBeforeDone: Int? = null,
 )

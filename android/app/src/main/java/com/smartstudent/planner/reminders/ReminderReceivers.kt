@@ -65,6 +65,25 @@ class MissedCheckReceiver : BroadcastReceiver() {
     }
 }
 
+/**
+ * The bedtime alarm: publishes today's summary (and the week's on Sundays, the month's on its last day), then plans
+ * again, which sets the alarm for the next bedtime.
+ */
+class SummaryReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val pending = goAsync()
+        val container = (context.applicationContext as PlannerApp).container
+        CoroutineScope(Dispatchers.Default).launch {
+            try {
+                container.summaryService.publishDue()
+                container.planManager.reconcile()
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+}
+
 /** After a reboot or an app update the alarms are gone: plan again, which sets them again. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

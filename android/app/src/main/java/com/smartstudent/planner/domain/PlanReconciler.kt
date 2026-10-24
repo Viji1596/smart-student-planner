@@ -104,6 +104,16 @@ object PlanReconciler {
     }
 
     /**
+     * Takes back "done": today's finished sessions of that task or habit are removed (the work is no longer
+     * counted, and the next re-plan puts it back where it belongs). Returns today's list without them, and how
+     * many minutes were taken back.
+     */
+    fun undoDone(existing: List<PlannedSession>, kind: WorkKind, refId: String): Pair<List<PlannedSession>, Int> {
+        val taken = existing.filter { it.kind == kind && it.refId == refId && it.status == SessionStatus.DONE }
+        return existing.filterNot { it in taken } to taken.sumOf { it.duration }
+    }
+
+    /**
      * Today's finished and missed sessions as one line per task or habit.
      * Missed lines for something that is already finished ([finishedRefIds]) are left out:
      * there is nothing left to do about them.

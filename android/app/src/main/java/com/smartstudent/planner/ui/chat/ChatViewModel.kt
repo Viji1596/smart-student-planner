@@ -11,7 +11,9 @@ import com.smartstudent.planner.data.remote.ChatActionDto
 import com.smartstudent.planner.data.remote.ChatContextDto
 import com.smartstudent.planner.data.remote.ChatMessageDto
 import com.smartstudent.planner.data.remote.ClarifyOptionDto
-import com.smartstudent.planner.domain.ReportQuestion
+import com.smartstudent.planner.domain.LocalAction
+import com.smartstudent.planner.domain.LocalQuestions
+import com.smartstudent.planner.domain.ServerVersion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -81,9 +83,10 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    // the report is built from data on this phone, so it doesn't need the server
-                    if (ReportQuestion.matches(clean)) {
-                        showReport(clean, context, "I couldn't reach the server, so I read this on your phone.")
+                    // questions about your own data are answered from this phone, so they don't need the server
+                    val local = LocalQuestions.detect(clean)
+                    if (local != null) {
+                        answerHere(local, context, "I couldn't reach the server, so I answered this on your phone.")
                         return@launch
                     }
                     throw e
@@ -91,10 +94,17 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
                 _mode.value = response.source.takeIf { it.isNotBlank() }
                 _serverVersion.value = response.version
 
-                // the server didn't understand a question about how you're doing: the phone still can
-                if (response.actions.isEmpty() && response.clarify == null && ReportQuestion.matches(clean)) {
-                    showReport(clean, context, null)
-                    return@launch
+                if (!warnedOldServer && ServerVersion.isOlder(response.version, EXPECTED_SERVER)) {
+                    warnedOldServer = true
+                    say(oldServerNotice(response.version), error = true)
+                }
+
+                // the server didn't understand a question about your own data: the phone still can
+                if (response.actions.isEmpty() && response.clarify == null) {
+                    LocalQuestions.detect(clean)?.let { local ->
+                        answerHere(local, context, null)
+                        return@launch
+                    }
                 }
 
                 val results = mutableListOf<String>()
@@ -121,10 +131,24 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
         }
     }
 
-    private suspend fun showReport(text: String, context: ChatContextDto, note: String?) {
-        val args = JsonObject(mapOf("days" to JsonPrimitive(ReportQuestion.days(text))))
-        val report = service.execute(ChatActionDto("show_report", args), context)
-        say(listOfNotNull(note, report).joinToString("\n"))
+    private var warnedOldServer = false
+
+    private fun oldServerNotice(version: String): String =
+        "Heads up: the server this app talks to is out of date (it says ${version.ifBlank { "no version, so it is very old" }}; " +
+            "this app expects $EXPECTED_SERVER). That is why some things I should understand are missed. " +
+            "I can still answer questions about your plan, report, free time and what to focus on here on your phone.\n\n" +
+            "To update the server: in your project folder run  git add .  then  git commit -m \"update\"  then  git push. " +
+            "Wait until Render says Live, then open your server address followed by /health. It should show version $EXPECTED_SERVER."
+
+    /** Shows a read-only answer built from the data on this phone (report, focus, plan, free time, lists). */
+    private suspend fun answerHere(action: LocalAction, context: ChatContextDto, note: String?) {
+        val args = buildMap<String, JsonPrimitive> {
+            action.day?.let { put("day", JsonPrimitive(it)) }
+            action.filter?.let { put("filter", JsonPrimitive(it)) }
+            action.days?.let { put("days", JsonPrimitive(it)) }
+        }
+        val answer = service.execute(ChatActionDto(action.type, JsonObject(args)), context)
+        say(listOfNotNull(note, answer.takeIf { it.isNotBlank() }).joinToString("\n"))
     }
 
     fun confirm(messageId: Long) {
@@ -161,6 +185,9 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
     }
 
     companion object {
+        /** The backend version this app is built for. An older backend is pointed out in the chat. */
+        const val EXPECTED_SERVER = "6.5"
+
         private const val GREETING =
             "Hi! I'm your planner assistant. Ask about your plan, tell me what to add or change, ask how you're doing, " +
                 "or just tell me if the day feels like too much. For example: “move physics to 6pm”, " +

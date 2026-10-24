@@ -85,11 +85,12 @@ fun HomeScreen(
     onOpenProfile: () -> Unit,
     onViewAllTasks: () -> Unit,
     onOpenReminders: () -> Unit,
-    onOpenChat: () -> Unit,
+
 ) {
     val viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory(container))
     val state by viewModel.state.collectAsState()
     val remindersOn by viewModel.remindersOn.collectAsState()
+    val justCompleted by viewModel.justCompleted.collectAsState()
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResume() }
     // Home may come back after the assistant (or another screen) changed things: bring the plan up to date.
@@ -106,6 +107,9 @@ fun HomeScreen(
             onCompleteSession = viewModel::completeSession,
             onSkipSession = viewModel::skipSession,
             onMarkMissedDone = viewModel::markMissedDone,
+            onUndoDone = viewModel::undoDone,
+            justCompleted = justCompleted,
+            onUndoLast = viewModel::undoLastCompleted,
             onReplan = viewModel::replan,
             onUndoHabit = viewModel::undoHabit,
             onSync = onSync,
@@ -113,7 +117,6 @@ fun HomeScreen(
             onViewAllTasks = onViewAllTasks,
             remindersOff = remindersOn == false,
             onOpenReminders = onOpenReminders,
-            onOpenChat = onOpenChat,
         )
     }
 }
@@ -126,6 +129,9 @@ private fun HomeContent(
     onCompleteSession: (Session) -> Unit,
     onSkipSession: (Session) -> Unit,
     onMarkMissedDone: (HistoryEntry) -> Unit,
+    onUndoDone: (HistoryEntry) -> Unit,
+    justCompleted: Session?,
+    onUndoLast: () -> Unit,
     onReplan: () -> Unit,
     onUndoHabit: (String) -> Unit,
     onSync: () -> Unit,
@@ -133,7 +139,7 @@ private fun HomeContent(
     onViewAllTasks: () -> Unit,
     remindersOff: Boolean,
     onOpenReminders: () -> Unit,
-    onOpenChat: () -> Unit,
+
 ) {
     val view = state.view
     val schedule = view.schedule
@@ -166,8 +172,6 @@ private fun HomeContent(
                     fontSize = 22.sp, fontWeight = FontWeight.Medium, color = scheme.onBackground,
                     modifier = Modifier.weight(1f),
                 )
-                RoundIconButton(Icons.Default.Face, "Assistant", onOpenChat)
-                Spacer(Modifier.width(10.dp))
                 RoundIconButton(Icons.Default.Settings, "Profile and settings", onOpenProfile)
                 Spacer(Modifier.width(10.dp))
                 RoundIconButton(Icons.Default.Refresh, "Sync", onSync)
@@ -290,6 +294,21 @@ private fun HomeContent(
             }
         }
 
+        // ---- just ticked a session? a few seconds to take it back
+        if (justCompleted != null) {
+            item {
+                WhiteCard(Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Marked “${justCompleted.item.title}” as done.",
+                            Modifier.weight(1f), fontSize = 15.sp,
+                        )
+                        TextButton(onClick = onUndoLast) { Text("Undo") }
+                    }
+                }
+            }
+        }
+
         // ---- timeline
         item {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
@@ -372,6 +391,8 @@ private fun HomeContent(
                         }
                         if (past.status == SessionStatus.MISSED) {
                             TextButton(onClick = { onMarkMissedDone(past) }) { Text("I did it") }
+                        } else {
+                            TextButton(onClick = { onUndoDone(past) }) { Text("Undo") }
                         }
                     }
                 }

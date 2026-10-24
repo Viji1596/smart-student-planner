@@ -67,6 +67,17 @@ data class ChatReportDto(
     val bestDay: String? = null,
     val mostMissed: String? = null,
     val habits: List<ChatHabitReportDto> = emptyList(),
+    /** Finished within the deadline (30 minutes' grace after the due day), finished late, and missed. */
+    val finishedOnTime: Int = 0,
+    val finishedLate: Int = 0,
+    val missedInPeriod: Int = 0,
+    /** Tasks scheduled over the period, and how many of them were finished. */
+    val scheduledTasks: Int = 0,
+    val finishedScheduled: Int = 0,
+    val score: Int? = null,
+    val grade: String = "",
+    /** What the numbers say about how the student works (best weekday, time of day, deadline habits...). */
+    val insights: List<String> = emptyList(),
 )
 
 /** The task the student was just working with: "it" in "move it to 9pm" means this one. */

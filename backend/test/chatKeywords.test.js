@@ -40,12 +40,25 @@ test("the performance report, asked in every way people ask it", () => {
   }
 });
 
+test("the grade is part of the report", () => {
+  for (const t of ["what's my grade", "what is my score", "show my grades", "my grade this week"]) {
+    assert.equal(run(t, ctx).actions[0].type, "show_report", t);
+  }
+});
+
 test("a day, two weeks, a month, N days", () => {
   assert.equal(run("how did i do today", ctx).actions[0].args.days, 1);
+  assert.equal(run("how is my day going", ctx).actions[0].args.days, 1);
+  assert.equal(run("how was my day", ctx).actions[0].args.days, 1);
+  assert.equal(run("how is my day working", ctx).actions[0].args.days, 1);
   assert.equal(run("how am i doing today", ctx).actions[0].args.days, 1);
   assert.equal(run("how much did i do so far today", ctx).actions[0].args.days, 1);
   assert.equal(run("report for the last 14 days", ctx).actions[0].args.days, 14);
   assert.equal(run("how was my month", ctx).actions[0].args.days, 30);
+  assert.equal(run("monthly report", ctx).actions[0].args.days, 30);
+  assert.equal(run("my monthly analysis", ctx).actions[0].args.days, 30);
+  assert.equal(run("daily report", ctx).actions[0].args.days, 1);
+  assert.equal(run("weekly report", ctx).actions[0].args.days, 7);
   assert.equal(run("progress over the last two weeks", ctx).actions[0].args.days, 14);
 });
 

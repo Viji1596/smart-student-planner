@@ -18,6 +18,12 @@ data class ReminderSettings(
     val travel: Boolean = true,
     val mealsAndRest: Boolean = false,
     val morningSummary: Boolean = true,
+    /** At bedtime: how many tasks were finished today. */
+    val daySummary: Boolean = true,
+    /** On Sundays at bedtime: the week's analysis. */
+    val weekSummary: Boolean = true,
+    /** On the last day of the month at bedtime: the month's analysis. */
+    val monthSummary: Boolean = true,
 )
 
 enum class ReminderKind { SESSION, SESSION_ENDING, SESSION_END, TRAVEL, MEAL_REST, MORNING }

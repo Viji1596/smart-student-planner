@@ -311,3 +311,67 @@ test.describe("the route gives the free assistant the conversation", () => {
   });
 });
 
+// ------------------------------------------------------------ grading and trends reach the assistant
+test("the AI is told how to congratulate and how to analyse the student's trends", () => {
+  const system = ai.buildSystem(context);
+  assert.match(system, /finishedScheduled of scheduledTasks/);
+  assert.match(system, /Congratulate them warmly only when that is 80% or more/);
+  assert.match(system, /up to 30 minutes after the end of the due day still counts as on time/);
+  assert.match(system, /best and weakest weekday, the time of day that works for them/);
+  assert.match(system, /Use only numbers that are in REPORT/);
+});
+
+test("the AI is given the grade, the deadline counts and the insights", () => {
+  const withGrading = {
+    ...context,
+    report: {
+      days: 7, trackedDays: 5, minutesDone: 640, sessionsDone: 14, sessionsMissed: 3, tasksCompleted: 6, tasksOpen: 5, overdue: 1, dueSoon: 2, habits: [],
+      finishedOnTime: 5, finishedLate: 1, missedInPeriod: 1, scheduledTasks: 8, finishedScheduled: 6, score: 74, grade: "B",
+      insights: ["You finish more in the evening (80%) than in the morning (40%). Plan your hardest work for the evening."],
+    },
+  };
+  const system = ai.buildSystem(withGrading);
+  assert.match(system, /"finishedScheduled":6/);
+  assert.match(system, /"scheduledTasks":8/);
+  assert.match(system, /"finishedOnTime":5/);
+  assert.match(system, /"grade":"B"/);
+  assert.match(system, /finish more in the evening/);
+});
+
+test.describe("the endpoint accepts the graded report", () => {
+  test.before(async () => {
+    server = await startWith({ apiKey: "" });
+    url = `http://127.0.0.1:${server.address().port}/api/chat`;
+  });
+  test.after(() => server.close());
+
+  const graded = {
+    ...context,
+    report: {
+      days: 7, trackedDays: 5, minutesDone: 640, sessionsDone: 14, sessionsMissed: 3, tasksCompleted: 6, tasksOpen: 5, overdue: 1, dueSoon: 2, habits: [],
+      finishedOnTime: 5, finishedLate: 1, missedInPeriod: 1, scheduledTasks: 8, finishedScheduled: 6, score: 74, grade: "B", insights: ["x"],
+    },
+  };
+
+  test("a report with grading is valid, and one without is too", async () => {
+    assert.equal((await post("g1", say("how am i doing", graded))).status, 200);
+    assert.equal((await post("g1", say("how am i doing", context))).status, 200);
+  });
+
+  test("a null score (no data yet) is valid", async () => {
+    const noScore = { ...graded, report: { ...graded.report, score: null, grade: "", scheduledTasks: 0, finishedScheduled: 0 } };
+    assert.equal((await post("g2", say("how am i doing", noScore))).status, 200);
+  });
+
+  test("a malformed grade is refused", async () => {
+    const bad = { ...graded, report: { ...graded.report, grade: "WAY TOO LONG" } };
+    assert.equal((await post("g3", say("how am i doing", bad))).status, 400);
+  });
+
+  test("'how is my day going' asks for today's report", async () => {
+    const body = await (await post("g4", say("how is my day going", graded))).json();
+    assert.deepEqual([body.actions[0].type, body.actions[0].args.days], ["show_report", 1]);
+    assert.equal(body.version, "6.5");
+  });
+});
+

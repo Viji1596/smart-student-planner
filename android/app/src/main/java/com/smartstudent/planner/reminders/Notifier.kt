@@ -14,6 +14,7 @@ import com.smartstudent.planner.R
 object Notifier {
     const val CHANNEL_REMINDERS = "reminders"
     const val CHANNEL_PLAN = "plan_changes"
+    const val CHANNEL_SUMMARY = "summaries"
 
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -25,6 +26,11 @@ object Notifier {
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_PLAN, "Plan changes", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "When a session was missed and your plan was updated"
+            }
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_SUMMARY, "Daily, weekly and monthly summaries", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "At bedtime: how many tasks you finished, and your weekly and monthly analysis"
             }
         )
     }

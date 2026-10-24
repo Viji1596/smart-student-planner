@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -34,13 +35,20 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.smartstudent.planner.data.local.ThemeMode
 import com.smartstudent.planner.ui.common.ScreenTitle
 import com.smartstudent.planner.ui.common.WhiteCard
 
 enum class ProfilePage { ROOT, ROUTINE, TIMETABLE, IMPORT, HABITS, REMINDERS }
 
 @Composable
-fun ProfileScreen(userName: String?, onOpen: (ProfilePage) -> Unit, onSignOut: () -> Unit) {
+fun ProfileScreen(
+    userName: String?,
+    themeMode: ThemeMode,
+    onThemeChange: (ThemeMode) -> Unit,
+    onOpen: (ProfilePage) -> Unit,
+    onSignOut: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
 
     Column(
@@ -65,6 +73,29 @@ fun ProfileScreen(userName: String?, onOpen: (ProfilePage) -> Unit, onSignOut: (
                     Text(userName ?: "Student", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                     Text("Signed in with Google", fontSize = 14.sp, color = scheme.onSurfaceVariant)
                 }
+            }
+        }
+
+        Text(
+            "Appearance", fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+            color = scheme.onBackground, modifier = Modifier.padding(top = 8.dp),
+        )
+        WhiteCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Light or dark", fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ThemeMode.values().forEach { mode ->
+                        FilterChip(
+                            selected = themeMode == mode,
+                            onClick = { onThemeChange(mode) },
+                            label = { Text(mode.label) },
+                        )
+                    }
+                }
+                Text(
+                    "“Match my phone” follows your phone's own light or dark setting.",
+                    fontSize = 13.sp, color = scheme.onSurfaceVariant,
+                )
             }
         }
 

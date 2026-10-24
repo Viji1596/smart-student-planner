@@ -48,6 +48,10 @@ private val headerFormat = DateTimeFormatter.ofPattern("d MMMM yyyy")
 fun ProgressScreen(container: AppContainer) {
     val viewModel: ProgressViewModel = viewModel(factory = ProgressViewModel.factory(container))
     val state by viewModel.state.collectAsState()
+    val performance: PerformanceViewModel = viewModel(factory = PerformanceViewModel.factory(container))
+    val report by performance.report.collectAsState()
+    val period by performance.period.collectAsState()
+    val published by performance.published.collectAsState()
 
     val current = state
     if (current == null) {
@@ -80,6 +84,9 @@ fun ProgressScreen(container: AppContainer) {
                 )
             }
         }
+
+        // ---- the grade, finished against scheduled, deadlines, and what the numbers say
+        item { PerformanceCard(report, period, performance::setPeriod) }
 
         // ---- this week's strip
         item {
@@ -151,5 +158,8 @@ fun ProgressScreen(container: AppContainer) {
                 }
             }
         }
+
+        // ---- the daily, weekly and monthly summaries
+        item { PublishedReports(published) }
     }
 }

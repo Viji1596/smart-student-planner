@@ -35,6 +35,8 @@ class TasksViewModel(private val repo: TaskRepository, private val planManager: 
             if (completed && !task.completed) {
                 planManager.recordDone(WorkKind.TASK, task.id, task.title, Priority.parse(task.priority), maxOf(5, task.estimatedMinutes - task.spentMinutes))
             }
+            // un-ticking takes back the "Done" line that ticking added (the task's own progress is restored by setCompleted)
+            if (!completed && task.completed) planManager.undoDone(WorkKind.TASK, task.id, adjustProgress = false)
             repo.setCompleted(task, completed)
         }
     }

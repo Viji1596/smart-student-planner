@@ -12,6 +12,7 @@ object ReminderIntents {
     const val ACTION_CHECK = "com.smartstudent.planner.MISSED_CHECK"
     const val ACTION_DONE = "com.smartstudent.planner.SESSION_DONE"
     const val ACTION_LATER = "com.smartstudent.planner.SESSION_LATER"
+    const val ACTION_SUMMARY = "com.smartstudent.planner.SUMMARY"
     const val EXTRA_SESSION_ID = "session_id"
     const val EXTRA_ID = "id"
     const val EXTRA_TITLE = "title"
@@ -25,6 +26,10 @@ object ReminderIntents {
 class ReminderScheduler(private val context: Context, private val store: ReminderStore) {
 
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+    private companion object {
+        val SUMMARY_CODE = "SUMMARY_ALARM".hashCode()
+    }
 
     /** [reminders] pair a time (epoch millis) with what to show; [checkTimes] are "was it missed?" moments. */
     suspend fun replaceAll(reminders: List<Pair<Long, Reminder>>, checkTimes: List<Long>) {
@@ -71,8 +76,28 @@ class ReminderScheduler(private val context: Context, private val store: Reminde
 
     suspend fun cancelAll() {
         cancelStored()
+        cancelSummary()
         store.setAlarmCodes(emptySet())
     }
+
+    /** One alarm at bedtime for the daily / weekly / monthly summary. [atMillis] null cancels it. */
+    fun scheduleSummary(atMillis: Long?) {
+        if (atMillis == null) {
+            cancelSummary()
+            return
+        }
+        set(atMillis, SUMMARY_CODE, summaryIntent())
+    }
+
+    private fun cancelSummary() {
+        PendingIntent.getBroadcast(context, SUMMARY_CODE, summaryIntent(), PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
+            ?.let {
+                alarmManager.cancel(it)
+                it.cancel()
+            }
+    }
+
+    private fun summaryIntent() = Intent(context, SummaryReceiver::class.java).setAction(ReminderIntents.ACTION_SUMMARY)
 
     private suspend fun cancelStored() {
         for (entry in store.alarmCodes()) {

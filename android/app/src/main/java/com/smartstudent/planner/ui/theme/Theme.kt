@@ -7,6 +7,7 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import com.smartstudent.planner.data.local.ThemeMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
@@ -66,9 +67,14 @@ private val PlannerShapes = Shapes(
 )
 
 @Composable
-fun PlannerTheme(content: @Composable () -> Unit) {
+fun PlannerTheme(mode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -> Unit) {
+    val dark = when (mode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+        colorScheme = if (dark) DarkColors else LightColors,
         shapes = PlannerShapes,
         content = content,
     )

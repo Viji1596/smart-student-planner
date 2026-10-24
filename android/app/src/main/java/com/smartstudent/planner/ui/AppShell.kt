@@ -65,6 +65,8 @@ import com.smartstudent.planner.data.repo.SyncManager
 import com.smartstudent.planner.ui.common.BarsIcon
 import com.smartstudent.planner.ui.habits.HabitsScreen
 import com.smartstudent.planner.ui.chat.ChatScreen
+import androidx.compose.runtime.rememberCoroutineScope
+import com.smartstudent.planner.data.local.ThemeMode
 import com.smartstudent.planner.ui.home.HomeScreen
 import com.smartstudent.planner.ui.profile.ProfilePage
 import com.smartstudent.planner.ui.profile.ProfileScreen
@@ -147,6 +149,7 @@ class ShellViewModel(
 private enum class Tab(val label: String) {
     HOME("Home"),
     TASKS("Tasks"),
+    ASSISTANT("Assistant"),
     PROGRESS("Progress"),
     PROFILE("Profile"),
 }
@@ -167,7 +170,8 @@ fun AppShell(container: AppContainer) {
     var profilePage by rememberSaveable { mutableStateOf(ProfilePage.ROOT) }
     var addRequest by remember { mutableStateOf<AddKind?>(null) }
     var showAddMenu by remember { mutableStateOf(false) }
-    var chatOpen by rememberSaveable { mutableStateOf(false) }
+    val themeMode by container.appearanceStore.mode.collectAsState(initial = ThemeMode.SYSTEM)
+    val scope = rememberCoroutineScope()
     val snackbarHost = remember { SnackbarHostState() }
 
     // Pull the latest from other devices whenever the app comes to the foreground.
@@ -180,7 +184,8 @@ fun AppShell(container: AppContainer) {
         }
     }
 
-    BackHandler(enabled = chatOpen) { chatOpen = false }
+    // Back from the assistant returns to Home.
+    BackHandler(enabled = tab == Tab.ASSISTANT) { tab = Tab.HOME }
 
     // Back from a Profile sub-page returns to the Profile list.
     BackHandler(enabled = tab == Tab.PROFILE && profilePage != ProfilePage.ROOT) {
@@ -190,16 +195,14 @@ fun AppShell(container: AppContainer) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            if (!chatOpen) {
-                PlannerBottomBar(
-                    selected = tab,
-                    onSelect = {
-                        tab = it
-                        if (it == Tab.PROFILE) profilePage = ProfilePage.ROOT
-                    },
-                    onAdd = { showAddMenu = true },
-                )
-            }
+            PlannerBottomBar(
+                selected = tab,
+                onSelect = {
+                    tab = it
+                    if (it == Tab.PROFILE) profilePage = ProfilePage.ROOT
+                },
+                onAdd = { showAddMenu = true },
+            )
         },
         snackbarHost = { SnackbarHost(snackbarHost) },
     ) { padding ->
@@ -214,9 +217,7 @@ fun AppShell(container: AppContainer) {
                 )
             }
 
-            if (chatOpen) {
-                ChatScreen(container, onBack = { chatOpen = false })
-            } else when (tab) {
+            when (tab) {
                 Tab.HOME -> HomeScreen(
                     container,
                     userName = userName,
@@ -230,7 +231,6 @@ fun AppShell(container: AppContainer) {
                         tab = Tab.PROFILE
                         profilePage = ProfilePage.REMINDERS
                     },
-                    onOpenChat = { chatOpen = true },
                 )
                 Tab.TASKS -> TasksScreen(
                     container,
@@ -238,10 +238,13 @@ fun AppShell(container: AppContainer) {
                     onAddConsumed = { addRequest = null },
                     onSync = shell::sync,
                 )
+                Tab.ASSISTANT -> ChatScreen(container, onBack = { tab = Tab.HOME })
                 Tab.PROGRESS -> ProgressScreen(container)
                 Tab.PROFILE -> when (profilePage) {
                     ProfilePage.ROOT -> ProfileScreen(
                         userName = userName,
+                        themeMode = themeMode,
+                        onThemeChange = { mode -> scope.launch { container.appearanceStore.set(mode) } },
                         onOpen = { profilePage = it },
                         onSignOut = shell::signOut,
                     )
@@ -275,7 +278,7 @@ fun AppShell(container: AppContainer) {
                 Text("Add something", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 AddMenuRow(Icons.Default.Face, "Ask the assistant", "Add or change things by typing") {
                     showAddMenu = false
-                    chatOpen = true
+                    tab = Tab.ASSISTANT
                 }
                 AddMenuRow(Icons.Default.Check, "New task", "Something to get done") {
                     showAddMenu = false
@@ -348,6 +351,7 @@ private fun PlannerBottomBar(selected: Tab, onSelect: (Tab) -> Unit, onAdd: () -
                     }
                 }
             }
+            BarItem(Tab.ASSISTANT, selected, onSelect, Modifier.weight(1f)) { tint -> Icon(Icons.Default.Face, null, tint = tint) }
             BarItem(Tab.PROGRESS, selected, onSelect, Modifier.weight(1f)) { tint -> BarsIcon(tint) }
             BarItem(Tab.PROFILE, selected, onSelect, Modifier.weight(1f)) { tint -> Icon(Icons.Default.Person, null, tint = tint) }
         }

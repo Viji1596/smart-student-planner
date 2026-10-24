@@ -6,7 +6,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.smartstudent.planner.AppContainer
+import com.smartstudent.planner.data.report.SummaryService
 import com.smartstudent.planner.domain.ReminderSettings
+import com.smartstudent.planner.domain.SummarySchedule
 import com.smartstudent.planner.reminders.PlanManager
 import com.smartstudent.planner.reminders.ReminderDiagnostics
 import com.smartstudent.planner.reminders.ReminderScheduler
@@ -21,6 +23,7 @@ class RemindersViewModel(
     private val store: ReminderStore,
     private val planManager: PlanManager,
     private val scheduler: ReminderScheduler,
+    private val summaries: SummaryService,
 ) : ViewModel() {
 
     val prefs: StateFlow<ReminderSettings> =
@@ -32,6 +35,11 @@ class RemindersViewModel(
     /** Re-checks today's plan and sets the alarms again. */
     fun recheck() {
         viewModelScope.launch { planManager.reconcile(userInitiated = true) }
+    }
+
+    /** Publishes today's summary now (as a notification, and in Progress), so you can see what the bedtime one looks like. */
+    fun showSummaryNow() {
+        viewModelScope.launch { summaries.publish(SummarySchedule.Kind.DAY, java.time.LocalDate.now(), notify = true) }
     }
 
     /** Sets a real alarm one minute from now. Returns whether exact timing is available. */
@@ -50,10 +58,13 @@ class RemindersViewModel(
     fun setTravel(value: Boolean) = update { it.copy(travel = value) }
     fun setMealsAndRest(value: Boolean) = update { it.copy(mealsAndRest = value) }
     fun setMorningSummary(value: Boolean) = update { it.copy(morningSummary = value) }
+    fun setDaySummary(value: Boolean) = update { it.copy(daySummary = value) }
+    fun setWeekSummary(value: Boolean) = update { it.copy(weekSummary = value) }
+    fun setMonthSummary(value: Boolean) = update { it.copy(monthSummary = value) }
 
     companion object {
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
-            initializer { RemindersViewModel(container.reminderStore, container.planManager, container.reminderScheduler) }
+            initializer { RemindersViewModel(container.reminderStore, container.planManager, container.reminderScheduler, container.summaryService) }
         }
     }
 }

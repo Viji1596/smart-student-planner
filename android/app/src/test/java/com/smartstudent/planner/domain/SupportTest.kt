@@ -450,7 +450,49 @@ class SupportTest {
         assertEquals(1, ReportQuestion.days("how did i do today"))
         assertEquals(14, ReportQuestion.days("progress over the last two weeks"))
         assertEquals(30, ReportQuestion.days("how was my month"))
+        assertEquals(30, ReportQuestion.days("monthly report"))
+        assertEquals(1, ReportQuestion.days("daily report"))
+        assertTrue(ReportQuestion.matches("what's my grade"))
+        assertTrue(ReportQuestion.matches("show my score"))
+        assertTrue(ReportQuestion.matches("my weekly analysis"))
+        assertEquals(30, ReportQuestion.days("my monthly analysis"))
         assertEquals(21, ReportQuestion.days("report for the last 21 days"))
         assertEquals(60, ReportQuestion.days("report for 300 days"))
+    }
+
+    // ------------------------------------------------------- questions the phone answers by itself
+
+    @Test
+    fun theSameQuestionsTheServerUnderstandsAreUnderstoodOnThePhone() {
+        assertEquals(LocalAction("show_report", days = 7), LocalQuestions.detect("how am i doing"))
+        assertEquals(LocalAction("show_report", days = 1), LocalQuestions.detect("how is my day going"))
+        assertEquals(LocalAction("show_focus"), LocalQuestions.detect("what should I focus on?"))
+        assertEquals(LocalAction("show_focus"), LocalQuestions.detect("where do i start"))
+        assertEquals(LocalAction("show_focus"), LocalQuestions.detect("help me prioritise"))
+        assertEquals(LocalAction("show_plan", day = "today"), LocalQuestions.detect("what's my plan today"))
+        assertEquals(LocalAction("show_plan", day = "tomorrow"), LocalQuestions.detect("show my schedule for tomorrow"))
+        assertEquals(LocalAction("show_free_time", day = "tomorrow"), LocalQuestions.detect("how much free time do i have tomorrow"))
+        assertEquals(LocalAction("show_tasks", filter = "overdue"), LocalQuestions.detect("what's overdue"))
+        assertEquals(LocalAction("show_tasks", filter = "due_soon"), LocalQuestions.detect("what is due this week"))
+        assertEquals(LocalAction("show_tasks", filter = "open"), LocalQuestions.detect("show my tasks"))
+        assertEquals(LocalAction("show_missed"), LocalQuestions.detect("what did i miss today"))
+    }
+
+    @Test
+    fun commandsAreNeverTreatedAsQuestions() {
+        for (t in listOf("add task what should i focus on", "move maths to 6pm", "delete the plan", "mark overdue tasks done", "start maths today", "hello", "")) {
+            assertNull(t, LocalQuestions.detect(t))
+        }
+    }
+
+    @Test
+    fun versionsAreCompared() {
+        assertTrue(ServerVersion.isOlder("", "6.5"))
+        assertTrue(ServerVersion.isOlder("6.4", "6.5"))
+        assertTrue(ServerVersion.isOlder("5.9", "6.5"))
+        assertFalse(ServerVersion.isOlder("6.5", "6.5"))
+        assertFalse(ServerVersion.isOlder("6.10", "6.5"))
+        assertFalse(ServerVersion.isOlder("7", "6.5"))
+        assertTrue(ServerVersion.isOlder("6", "6.5"))
     }
 }

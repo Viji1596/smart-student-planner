@@ -15,6 +15,7 @@ import com.smartstudent.planner.data.remote.ChatSessionDto
 import com.smartstudent.planner.data.remote.ChatSpanDto
 import com.smartstudent.planner.data.remote.ChatTaskDto
 import com.smartstudent.planner.data.remote.PlannerApi
+import com.smartstudent.planner.data.report.ReportBuilder
 import com.smartstudent.planner.data.repo.HabitRepository
 import com.smartstudent.planner.data.repo.SettingsRepository
 import com.smartstudent.planner.data.repo.TaskRepository
@@ -68,6 +69,7 @@ class ChatService(
     private val habits: HabitRepository,
     private val sessionDao: PlannedSessionDao,
     private val planManager: PlanManager,
+    private val reports: ReportBuilder,
 ) {
     /**
      * The task the student was just working with (the last one an action touched). It is sent with every message so
@@ -134,23 +136,8 @@ class ChatService(
 
     // ----------------------------------------------------------------------------- the report
 
-    /** How the last [days] days went, from the session history, tasks and habits kept on this phone. */
-    suspend fun buildReport(days: Int): PerformanceReport {
-        val today = LocalDate.now()
-        val zone = ZoneId.systemDefault()
-        val sessions = sessionDao.getBetween(today.minusDays((days * 2).toLong()).toString(), today.toString()).mapNotNull { it.toDomainOrNull() }
-        val reportTasks = tasks.tasks.first().map { t ->
-            ReportTask(
-                title = t.title,
-                due = t.dueDate?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
-                completed = t.completed,
-                completedOn = t.completedAt?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
-            )
-        }
-        val habitInfos = habits.habits.first().map { it.toInfo() }
-        val doneDates = habits.completionsSince(today.minusDays(120)).first().toDoneDates()
-        return PerformanceReport.build(days, today, sessions, reportTasks, habitInfos, doneDates)
-    }
+    /** How the last [days] days went (the same numbers the Progress screen and the bedtime summaries use). */
+    suspend fun buildReport(days: Int): PerformanceReport = reports.build(days)
 
     private fun PerformanceReport.toDto() = ChatReportDto(
         days = days,
@@ -168,6 +155,14 @@ class ChatService(
         bestDay = bestDay?.dayOfWeek?.getDisplayName(TextStyle.SHORT, Locale.ENGLISH),
         mostMissed = mostMissed,
         habits = habits.map { ChatHabitReportDto(it.title, it.done, it.expected, it.streak) },
+        finishedOnTime = finishedOnTime,
+        finishedLate = finishedLate,
+        missedInPeriod = missedInPeriod,
+        scheduledTasks = scheduledTasks,
+        finishedScheduled = finishedScheduled,
+        score = score,
+        grade = grade,
+        insights = insights,
     )
 
     // ------------------------------------------------------------------------------ the snapshot
