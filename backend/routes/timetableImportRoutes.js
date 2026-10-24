@@ -6,7 +6,7 @@ const { parseGrid } = require("../lib/timetableGrid");
 const { detectKind, mediaTypeFor, readWorkbook, readCsv, gridToText } = require("../lib/timetableFile");
 const { extractWithAi, ImportError } = require("../lib/aiExtract");
 const { extractPdfBoxes } = require("../lib/pdfText");
-const { readPages, pagesToText } = require("../lib/gridFromBoxes");
+const { readPages, pagesToText, courseNamesFromRows, applyCourseNames } = require("../lib/gridFromBoxes");
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
@@ -159,7 +159,8 @@ function buildRouter(deps = {}) {
         const results = sheets.map((s) => ({ sheet: s, result: parseGrid(s.rows) }));
         const best = results.sort((a, b) => b.result.entries.length - a.result.entries.length)[0];
         if (best && best.result.confident) {
-          return res.json({ entries: best.result.entries, warnings: [], method: "grid" });
+          const names = courseNamesFromRows(best.sheet.rows);
+          return res.json({ entries: applyCourseNames(best.result.entries, names), warnings: [], method: "grid" });
         }
 
         // not a layout we recognise: use the AI reader if it is set up

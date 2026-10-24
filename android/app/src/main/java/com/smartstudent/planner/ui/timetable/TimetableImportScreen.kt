@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.smartstudent.planner.AppContainer
+import com.smartstudent.planner.BuildConfig
 import com.smartstudent.planner.data.local.TimetableEntryEntity
 import com.smartstudent.planner.domain.ImportedClass
 import com.smartstudent.planner.domain.TimetableImport
@@ -60,6 +61,7 @@ fun TimetableImportScreen(container: AppContainer, onBack: () -> Unit) {
     val context = LocalContext.current
     val viewModel: TimetableImportViewModel = viewModel(factory = TimetableImportViewModel.factory(container))
     val ui by viewModel.ui.collectAsState()
+    val check by viewModel.check.collectAsState()
     val scheme = MaterialTheme.colorScheme
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -93,6 +95,12 @@ fun TimetableImportScreen(container: AppContainer, onBack: () -> Unit) {
                             "Old Excel files (.xls): open them and use Save As > Excel Workbook (.xlsx) first.",
                             fontSize = 13.sp, color = scheme.onSurfaceVariant,
                         )
+                        Text(
+                            "Server: ${BuildConfig.BASE_URL}",
+                            fontSize = 12.sp, color = scheme.onSurfaceVariant,
+                        )
+                        OutlinedButton(onClick = { viewModel.checkConnection() }) { Text("Check connection") }
+                        check?.let { Text(it, fontSize = 13.sp) }
                         Button(
                             onClick = { picker.launch(FILE_TYPES) },
                             shape = CircleShape,
@@ -124,6 +132,10 @@ fun TimetableImportScreen(container: AppContainer, onBack: () -> Unit) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Couldn't import", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = scheme.error)
                     Text(state.message, fontSize = 15.sp)
+                    state.details?.let {
+                        Text("Details: $it", fontSize = 12.sp, color = scheme.onSurfaceVariant)
+                    }
+                    Text("Server: ${BuildConfig.BASE_URL}", fontSize = 12.sp, color = scheme.onSurfaceVariant)
                     OutlinedButton(onClick = { viewModel.reset() }) { Text("Try another file") }
                 }
             }

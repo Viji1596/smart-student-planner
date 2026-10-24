@@ -792,3 +792,32 @@ test.describe("the reader's own behaviour", () => {
   });
 });
 
+test.describe("an Excel version of the university timetable", () => {
+  const { build: buildUnivXlsx } = require("./helpers/univXlsx");
+  let buf;
+  test.before(async () => {
+    const file = path.join(require("node:os").tmpdir(), `univ-${process.pid}.xlsx`);
+    await buildUnivXlsx(file);
+    buf = fs.readFileSync(file);
+    fs.unlinkSync(file);
+  });
+
+  test("times split over two lines, merged cells, break columns and a course list", async () => {
+    const s = await startServer({ apiKey: "", extractWithAi: fakeAi });
+    const res = await fetch(`http://127.0.0.1:${s.address().port}/api/timetable/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${signAccessToken("x1")}` },
+      body: JSON.stringify({ filename: "III CSE D.xlsx", data: buf.toString("base64") }),
+    });
+    s.close();
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.method, "grid");
+    const keys = body.entries.map(key);
+    assert.equal(body.entries.length, 30);
+    assert.ok(keys.includes("1 08:50-09:40 Theory of Computation (23CSE303)"));
+    assert.ok(keys.includes("1 11:35-13:15 Computer Networks (23CSE302) · Tutorial/Achala"), "a merged cell covers both slots");
+    assert.ok(!body.entries.some((e) => /break/i.test(e.title)), "the vertical break columns are not classes");
+  });
+});
+

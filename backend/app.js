@@ -38,7 +38,9 @@ app.use("/api/timetable/import", express.json({ limit: "14mb" }), buildTimetable
 app.use(express.json({ limit: "100kb" }));
 
 app.get("/", (req, res) => res.json({ message: "Smart Student Planner API" }));
-app.get("/health", (req, res) => res.json({ ok: true, version: "5d", timetableImport: true }));
+app.get("/health", (req, res) =>
+  res.json({ ok: true, version: "5e", features: ["timetable-import", "pdf-text", "text-boxes"] })
+);
 
 app.use(
   "/api/auth",

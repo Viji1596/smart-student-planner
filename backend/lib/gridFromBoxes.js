@@ -340,6 +340,19 @@ function courseNames(boxes, below, h) {
   return names;
 }
 
+/** The same course list, read from the rows of a spreadsheet: a cell with a code, then the next cell is the name. */
+function courseNamesFromRows(rows) {
+  const names = new Map();
+  for (const row of rows) {
+    const cells = row.map((c) => String(c || "").trim());
+    const i = cells.findIndex((c) => COURSE_CODE.test(c));
+    if (i < 0) continue;
+    const name = cells.slice(i + 1).find((c) => c);
+    if (name && !COURSE_CODE.test(name) && name.length >= 3 && !/^\d+$/.test(name)) names.set(cells[i], name.slice(0, 60));
+  }
+  return names;
+}
+
 /** "23CSE302/Tutorial/Achala" -> "Computer Networks (23CSE302) · Tutorial/Achala" */
 function applyCourseNames(entries, names) {
   if (!names.size) return entries;
@@ -404,4 +417,4 @@ function pagesToText(pages, limit = 20000) {
   return lines.join("\n").slice(0, limit);
 }
 
-module.exports = { readPages, pagesToText, clean, straighten, anchoredGrid, courseNames, applyCourseNames };
+module.exports = { readPages, pagesToText, courseNamesFromRows, clean, straighten, anchoredGrid, courseNames, applyCourseNames };
