@@ -6,6 +6,7 @@ const { validateAction } = require("../lib/chat/actions");
 const TODAY = "2026-10-21"; // Wednesday
 const ctx = {
   today: TODAY,
+  nowMin: 600,
   tasks: [
     { id: "t1", title: "Maths homework", minutes: 45, priority: "High", due: "2026-10-23", completed: false },
     { id: "t2", title: "Physics lab report", minutes: 60, completed: false },
@@ -21,6 +22,11 @@ const ctx = {
       { id: "s2", title: "Physics lab report", kind: "TASK", refId: "t2", start: "17:00", end: "18:00", status: "PLANNED" },
       { id: "s3", title: "Reading", kind: "TASK", refId: "t3", start: "09:00", end: "09:30", status: "DONE" },
     ],
+    busy: [
+      { label: "Dinner", kind: "MEAL", start: "20:00", end: "20:40" },
+      { label: "Maths class", kind: "CLASS", start: "09:00", end: "11:00" },
+    ],
+    freeBlocks: [{ label: "free", start: "18:00", end: "19:30" }],
   },
 };
 
@@ -136,21 +142,23 @@ test("a part of the day is 'around then'", () => {
   assert.deepEqual([a.args.time, a.args.flexible], ["18:00", true]);
 });
 
-test("moving to another day is explained, not guessed", () => {
-  const r = run("move physics to tomorrow evening");
-  assert.equal(r.actions.length, 0);
-  assert.match(r.reply, /due date/);
+test("moving to another day puts the task off: it does not touch the due date", () => {
+  const a = only("move physics to tomorrow evening");
+  assert.deepEqual([a.type, a.args], ["defer_task", { taskId: "t2", until: "2026-10-22" }]);
+  const b = only("move maths homework to tomorrow");
+  assert.equal(b.type, "defer_task");
+  assert.ok(!run("move maths homework to tomorrow").actions.some((x) => x.type === "update_task"));
 });
 
-test("a task with no session today can't be moved", () => {
-  const r = run("move reading to 5pm"); // its session today is already done
-  assert.equal(r.actions.length, 0);
+test("a task with no session today is scheduled at the time you give", () => {
+  const a = only("move reading to 5pm"); // its session today is already done, so nothing is planned
+  assert.deepEqual([a.type, a.args], ["place_task", { taskId: "t3", time: "17:00", flexible: false }]);
 });
+
 
 test("change the due date", () => {
   const a = only("change maths homework due date to monday");
   assert.deepEqual([a.type, a.args], ["update_task", { taskId: "t1", due: "2026-10-26" }]);
-  assert.equal(only("move physics lab report to friday").args.due, "2026-10-23");
   assert.equal(only("set reading due tomorrow").args.due, "2026-10-22");
   assert.equal(only("remove the due date from maths homework").args.due, "none");
 });
@@ -217,11 +225,12 @@ test("a habit without how often asks", () => {
 // ----------------------------------------------------------------------- talk and edges
 test("help, greetings, thanks, nonsense", () => {
   assert.match(run("help").reply, /add task/);
-  assert.match(run("hi").reply, /Hi/);
-  assert.match(run("thanks!").reply, /welcome/);
+  assert.match(run("hi").reply, /Good (morning|afternoon|evening)/);
+  assert.match(run("thanks!").reply, /welcome|Anytime|help|Happy/i);
   const r = run("blah blah banana");
   assert.equal(r.actions.length, 0);
-  assert.match(r.reply, /not sure/);
+  assert.match(r.reply, /not sure|didn't quite get/);
+  assert.match(r.reply, /how you're feeling/);
   assert.match(run("").reply, /Type a message/);
 });
 

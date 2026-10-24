@@ -64,6 +64,46 @@ data class ReplanResult(
 
 object PlanReconciler {
     /**
+     * Work that was done without ticking a planned session on Home: told to the assistant, or finished on the Tasks
+     * tab. The earliest planned session for that task or habit today becomes DONE and is shown as just finished; if
+     * there was none, a finished session of [minutes] is added. Older "missed" records of the same item are dropped.
+     * Either way it shows under "Earlier today" and counts in the performance report. Returns today's full list.
+     */
+    fun recordDone(
+        existing: List<PlannedSession>,
+        date: LocalDate,
+        kind: WorkKind,
+        refId: String,
+        title: String,
+        priority: Priority,
+        minutes: Int,
+        nowMin: Int,
+    ): List<PlannedSession> {
+        val planned = existing
+            .filter { it.kind == kind && it.refId == refId && it.status == SessionStatus.PLANNED }
+            .minByOrNull { it.startMin }
+        val duration = (planned?.duration ?: minutes).coerceAtLeast(5)
+        val end = maxOf(nowMin, duration)
+        val start = end - duration
+        val done = PlannedSession(
+            id = sessionId(date, kind, refId, start),
+            date = date,
+            startMin = start,
+            endMin = end,
+            kind = kind,
+            refId = refId,
+            title = planned?.title ?: title,
+            priority = planned?.priority ?: priority,
+            status = SessionStatus.DONE,
+        )
+        val rest = existing.filterNot {
+            it.id == done.id || it.id == planned?.id ||
+                (it.status == SessionStatus.MISSED && it.kind == kind && it.refId == refId)
+        }
+        return (rest + done).sortedWith(compareBy({ it.startMin }, { it.endMin }))
+    }
+
+    /**
      * Today's finished and missed sessions as one line per task or habit.
      * Missed lines for something that is already finished ([finishedRefIds]) are left out:
      * there is nothing left to do about them.

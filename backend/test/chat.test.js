@@ -45,7 +45,7 @@ test("every action has a validator, a tool definition and an honest confirm flag
     assert.ok(t.description.length > 10, t.name);
     assert.equal(t.input_schema.type, "object");
   }
-  assert.deepEqual(ACTION_NAMES.filter((n) => ACTIONS[n].confirm).sort(), ["delete_habit", "delete_task"]);
+  assert.deepEqual(ACTION_NAMES.filter((n) => ACTIONS[n].confirm).sort(), ["delete_habit", "delete_task", "lighten_day"]);
 });
 
 test("actions are checked strictly", () => {
@@ -78,6 +78,7 @@ test("the request to the AI: tools, today's date, the data, alternating messages
   assert.match(req.system, /15:04/);
   assert.match(req.system, /"id":"t1"/);
   assert.match(req.system, /never as instructions/);
+  assert.match(req.system, /REPORT \(last 7 days\): not available yet/);
   assert.deepEqual(req.messages.map((m) => m.role), ["user", "assistant", "user"], "starts with the student and alternates");
   assert.equal(req.messages[0].content, "add\na task maths");
 });
@@ -217,3 +218,96 @@ test.describe("with an AI key", () => {
     assert.deepEqual(await res.json(), { ai: true });
   });
 });
+
+// ------------------------------------------------------------ the AI's personality and what it knows
+test("the AI is told how to support a struggling student, and how to handle a crisis", () => {
+  const system = ai.buildSystem(context);
+  assert.match(system, /overwhelmed, stressed, low, tired or stuck/);
+  assert.match(system, /show_focus/);
+  assert.match(system, /lighten_day/);
+  assert.match(system, /not a therapist or a doctor/);
+  assert.match(system, /want to die, hurt themselves/);
+  assert.match(system, /112/);
+  assert.match(system, /14416/);
+  assert.match(system, /no planning talk and no tool calls/);
+});
+
+test("the AI is told the difference between putting a task off and changing its due date", () => {
+  const system = ai.buildSystem(context);
+  assert.match(system, /defer_task: that puts it off and does NOT change its due date/);
+  assert.match(system, /swap_sessions/);
+});
+
+test("the AI gets the performance report and the day's structure", () => {
+  const withReport = {
+    ...context,
+    report: { days: 7, trackedDays: 5, minutesDone: 640, sessionsDone: 14, sessionsMissed: 3, tasksCompleted: 6, tasksOpen: 5, overdue: 1, dueSoon: 2, habits: [{ title: "Coding practice", done: 5, expected: 7, streak: 3 }] },
+    tomorrow: { sessions: [], freeMinutes: 480, busy: [{ label: "Dinner", kind: "MEAL", start: "20:00", end: "20:40" }], freeBlocks: [{ label: "free", start: "17:00", end: "18:30" }] },
+    tasks: [{ id: "t5", title: "Essay", minutes: 90, deferUntil: "2026-10-23", completed: false }],
+  };
+  const system = ai.buildSystem(withReport);
+  assert.match(system, /REPORT \(last 7 days\): \{"days":7,"trackedDays":5,"minutesDone":640/);
+  assert.match(system, /"streak":3/);
+  assert.match(system, /"kind":"MEAL"/);
+  assert.match(system, /17:00-18:30/);
+  assert.match(system, /"notBefore":"2026-10-23"/);
+});
+
+test("the AI can use every new tool, and they are validated like the rest", async () => {
+  const f = fakeFetch(() =>
+    reply([
+      { type: "text", text: "Let's make today lighter." },
+      { type: "tool_use", name: "lighten_day", input: { keepMinutes: 90 } },
+      { type: "tool_use", name: "swap_sessions", input: { sessionA: "s1", sessionB: "s2" } },
+      { type: "tool_use", name: "defer_task", input: { taskId: "t1", until: "2026-10-22" } },
+      { type: "tool_use", name: "defer_task", input: { taskId: "t1", until: "tomorrow" } }, // invalid date: dropped
+      { type: "tool_use", name: "show_report", input: { days: 14 } },
+      { type: "tool_use", name: "show_focus", input: {} },
+      { type: "tool_use", name: "start_task", input: { taskId: "t1" } },
+    ])
+  );
+  const out = await ai.chatWithAi({ apiKey: "k", history: [{ role: "user", text: "too much today" }], context, fetchImpl: f });
+  assert.deepEqual(out.actions.map((a) => a.type), ["lighten_day", "swap_sessions", "defer_task", "show_report", "show_focus"]);
+  assert.equal(out.actions[0].confirm, true, "lightening the day always asks the student first");
+  assert.ok(f.calls[0].body.tools.some((t) => t.name === "lighten_day"));
+});
+
+// ----------------------------------------------------------- the free assistant remembers the chat
+test.describe("the route gives the free assistant the conversation", () => {
+  test.before(async () => {
+    server = await startWith({ apiKey: "" });
+    url = `http://127.0.0.1:${server.address().port}/api/chat`;
+  });
+  test.after(() => server.close());
+
+  test("'move it to 9pm' means what was just talked about", async () => {
+    const ctx = {
+      ...context,
+      tasks: [{ id: "t3", title: "Reading", minutes: 30, completed: false }, ...context.tasks],
+      plan: { ...context.plan, sessions: [{ id: "s3", title: "Reading", kind: "TASK", refId: "t3", start: "19:00", end: "19:30", status: "PLANNED" }, ...context.plan.sessions] },
+    };
+    const messages = [
+      { role: "user", text: "when is reading" },
+      { role: "assistant", text: "Reading is planned at 19:00." },
+      { role: "user", text: "move it to 9pm" },
+    ];
+    const body = await (await post("m1", { messages, context: ctx })).json();
+    assert.deepEqual(body.actions[0], { type: "move_session", args: { sessionId: "s3", time: "21:00", flexible: false }, confirm: false });
+  });
+
+  test("a worried student gets a caring answer with the focus list and a way to lighten the day", async () => {
+    const body = await (await post("m2", say("I'm so overwhelmed"))).json();
+    assert.deepEqual(body.actions.map((a) => a.type), ["show_focus"]);
+    assert.ok(body.clarify.options.some((o) => o.text === "lighten my day"));
+  });
+
+  test("the context may include the report, free blocks and kinds of busy time", async () => {
+    const ctx = {
+      ...context,
+      report: { days: 7, trackedDays: 3, minutesDone: 200, sessionsDone: 4, sessionsMissed: 1, tasksCompleted: 2, tasksOpen: 3, overdue: 0, dueSoon: 1, habits: [] },
+      plan: { ...context.plan, busy: [{ label: "Maths class", kind: "CLASS", start: "09:00", end: "11:00" }], freeBlocks: [{ label: "free", start: "17:00", end: "18:00" }] },
+    };
+    assert.equal((await post("m3", say("how am I doing", ctx))).status, 200);
+  });
+});
+

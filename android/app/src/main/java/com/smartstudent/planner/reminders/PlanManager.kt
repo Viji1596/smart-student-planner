@@ -25,9 +25,12 @@ import com.smartstudent.planner.domain.DayPlanner
 import com.smartstudent.planner.domain.DaySummary
 import com.smartstudent.planner.domain.MissedInfo
 import com.smartstudent.planner.domain.PlanReconciler
+import com.smartstudent.planner.domain.PlannedSession
+import com.smartstudent.planner.domain.Priority
 import com.smartstudent.planner.domain.Reminder
 import com.smartstudent.planner.domain.ReminderPlanner
 import com.smartstudent.planner.domain.MoveResult
+import com.smartstudent.planner.domain.Scheduler
 import com.smartstudent.planner.domain.SessionMover
 import com.smartstudent.planner.domain.SessionStatus
 import com.smartstudent.planner.domain.TimeBlock
@@ -35,6 +38,7 @@ import com.smartstudent.planner.domain.TimeUtil
 import com.smartstudent.planner.domain.WorkKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -79,19 +83,49 @@ class PlanManager(
     @OptIn(FlowPreview::class)
     fun start() {
         scope.launch {
-            combine(
-                settings.settings,
-                timetable.entries,
-                tasks.tasks,
-                habits.habits,
-                habits.completionsSince(LocalDate.now().minusDays(14)),
-            ) { s, e, t, h, c -> fingerprint(s, e, t, h, c) }
-                .distinctUntilChanged()
-                .debounce(800)
-                .collect { reconcile() }
+            // If the watcher ever fails it starts again, instead of leaving the plan frozen until the app is reopened.
+            while (true) {
+                try {
+                    combine(
+                        settings.settings,
+                        timetable.entries,
+                        tasks.tasks,
+                        habits.habits,
+                        habits.completionsSince(LocalDate.now().minusDays(14)),
+                    ) { s, e, t, h, c -> fingerprint(s, e, t, h, c) }
+                        .distinctUntilChanged()
+                        .debounce(800)
+                        .collect { reconcile() }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Plan watcher stopped (${e.message}); restarting", e)
+                    store.setError(System.currentTimeMillis(), "Plan watcher: ${e.message ?: e.javaClass.simpleName}")
+                    delay(2_000)
+                }
+            }
         }
         scope.launch {
             store.settings.distinctUntilChanged().collect { reconcile() }
+        }
+    }
+
+    /**
+     * Brings today's plan up to date right now (it only re-plans if something relevant changed), and says what went
+     * wrong instead of only recording it. Used after the assistant changes tasks or habits, so the Home screen
+     * never has to wait for the background watcher.
+     */
+    suspend fun refresh(): String? = mutex.withLock {
+        try {
+            doReconcile(userInitiated = false, force = false, skipId = null)
+            null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Refresh failed: ${e.message}", e)
+            val message = e.message ?: e.javaClass.simpleName
+            store.setError(System.currentTimeMillis(), message)
+            message
         }
     }
 
@@ -124,8 +158,139 @@ class PlanManager(
         }
     }
 
+    /**
+     * Work that was done without ticking a planned session on Home (told to the assistant, or finished on the Tasks
+     * tab) is written into today's history, so it shows under "Earlier today" and counts in the performance report.
+     * See [PlanReconciler.recordDone].
+     */
+    suspend fun recordDone(kind: WorkKind, refId: String, title: String, priority: Priority, minutes: Int) {
+        mutex.withLock {
+            try {
+                val now = LocalDateTime.now()
+                val today = now.toLocalDate()
+                val existing = sessionDao.getForDate(today.toString()).mapNotNull { it.toDomainOrNull() }
+                val updated = PlanReconciler.recordDone(existing, today, kind, refId, title, priority, minutes, now.hour * 60 + now.minute)
+                sessionDao.replaceForDate(today.toString(), updated.map { it.toEntity() })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Recording done work failed: ${e.message}", e)
+            }
+        }
+    }
+
     /** "Re-plan" button: rebuild the rest of today from now. */
     suspend fun replanNow() = reconcile(userInitiated = true, force = true)
+
+    /**
+     * "Do it at 9pm" for a task that has no session today (for example one that was just added): a session is created
+     * at that time (or the nearest free slot, if [flexible]) and kept there when the plan is rebuilt. If the task
+     * already has a session today, that one is moved instead. The session is at most 90 minutes.
+     */
+    suspend fun placeTask(taskId: String, timeMin: Int, flexible: Boolean): MoveOutcome = mutex.withLock {
+        try {
+            val now = LocalDateTime.now()
+            val today = now.toLocalDate()
+            val nowMin = now.hour * 60 + now.minute
+
+            val task = tasks.get(taskId) ?: return@withLock MoveOutcome.Refused("I couldn't find that task.")
+            val remaining = task.estimatedMinutes - task.spentMinutes
+            if (task.completed || remaining <= 0) return@withLock MoveOutcome.Refused("“${task.title}” is already done.")
+
+            val rules = settings.settings.first().toRules()
+            val todayEntries = timetable.entries.first()
+                .mapNotNull { e -> e.toFixedEntry()?.let { e.dayOfWeek to it } }
+                .filter { it.first == today.dayOfWeek.value }
+                .map { it.second }
+            val plan = DayPlanner.plan(rules, todayEntries)
+
+            val sessions = sessionDao.getForDate(today.toString()).mapNotNull { it.toDomainOrNull() }
+            val existing = sessions.filter { it.kind == WorkKind.TASK && it.refId == taskId && it.status == SessionStatus.PLANNED }
+                .minByOrNull { it.startMin }
+            val duration = existing?.duration ?: minOf(remaining, Scheduler.MAX_SESSION)
+            val blockers = sessions
+                .filter { it.id != existing?.id && it.status == SessionStatus.PLANNED && (it.pinned || it.startMin <= nowMin) }
+                .map { TimeBlock(it.startMin, it.endMin, it.title, BlockKind.CLASS) }
+
+            when (val result = SessionMover.place(plan, blockers, duration, timeMin, nowMin, flexible)) {
+                is MoveResult.Refused -> MoveOutcome.Refused(result.reason)
+                is MoveResult.Placed -> {
+                    val placed = PlannedSession(
+                        id = PlanReconciler.sessionId(today, WorkKind.TASK, taskId, result.startMin),
+                        date = today,
+                        startMin = result.startMin,
+                        endMin = result.startMin + duration,
+                        kind = WorkKind.TASK,
+                        refId = taskId,
+                        title = existing?.title ?: task.title,
+                        priority = existing?.priority ?: Priority.parse(task.priority),
+                        status = SessionStatus.PLANNED,
+                        pinned = true,
+                    )
+                    if (existing != null) sessionDao.replaceOne(existing.id, placed.toEntity()) else sessionDao.insertAll(listOf(placed.toEntity()))
+                    doReconcile(userInitiated = true, force = true, skipId = null)
+                    MoveOutcome.Moved(result.startMin)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Placing a task failed: ${e.message}", e)
+            MoveOutcome.Refused("Something went wrong while scheduling it.")
+        }
+    }
+
+    /**
+     * Swaps two of today's planned sessions: each takes the other's start time, and both stay there when
+     * the plan is rebuilt. Refused if either would not fit in its new place (they may differ in length).
+     */
+    suspend fun swapSessions(aId: String, bId: String): MoveOutcome = mutex.withLock {
+        try {
+            val now = LocalDateTime.now()
+            val today = now.toLocalDate()
+            val nowMin = now.hour * 60 + now.minute
+
+            val rules = settings.settings.first().toRules()
+            val todayEntries = timetable.entries.first()
+                .mapNotNull { e -> e.toFixedEntry()?.let { e.dayOfWeek to it } }
+                .filter { it.first == today.dayOfWeek.value }
+                .map { it.second }
+            val plan = DayPlanner.plan(rules, todayEntries)
+
+            val sessions = sessionDao.getForDate(today.toString()).mapNotNull { it.toDomainOrNull() }
+            val a = sessions.firstOrNull { it.id == aId && it.status == SessionStatus.PLANNED }
+            val b = sessions.firstOrNull { it.id == bId && it.status == SessionStatus.PLANNED }
+            if (a == null || b == null) return@withLock MoveOutcome.Refused("One of those sessions isn't planned any more.")
+
+            val newAStart = b.startMin
+            val newBStart = a.startMin
+            val newAEnd = newAStart + a.duration
+            val newBEnd = newBStart + b.duration
+            if (newAStart < newBEnd && newBStart < newAEnd) {
+                return@withLock MoveOutcome.Refused("They would overlap after the swap, because they're different lengths. Try moving one of them at a time.")
+            }
+
+            val blockers = sessions
+                .filter { it.id != a.id && it.id != b.id && it.status == SessionStatus.PLANNED && (it.pinned || it.startMin <= nowMin) }
+                .map { TimeBlock(it.startMin, it.endMin, it.title, BlockKind.CLASS) }
+            val aSpot = SessionMover.place(plan, blockers + TimeBlock(newBStart, newBEnd, b.title, BlockKind.CLASS), a.duration, newAStart, nowMin, false)
+            val bSpot = SessionMover.place(plan, blockers + TimeBlock(newAStart, newAEnd, a.title, BlockKind.CLASS), b.duration, newBStart, nowMin, false)
+            if (aSpot is MoveResult.Refused) return@withLock MoveOutcome.Refused("“${a.title}” can't go there. ${aSpot.reason}")
+            if (bSpot is MoveResult.Refused) return@withLock MoveOutcome.Refused("“${b.title}” can't go there. ${bSpot.reason}")
+
+            val movedA = a.copy(id = PlanReconciler.sessionId(today, a.kind, a.refId, newAStart), startMin = newAStart, endMin = newAEnd, pinned = true)
+            val movedB = b.copy(id = PlanReconciler.sessionId(today, b.kind, b.refId, newBStart), startMin = newBStart, endMin = newBEnd, pinned = true)
+            sessionDao.replaceOne(a.id, movedA.toEntity())
+            sessionDao.replaceOne(b.id, movedB.toEntity())
+            doReconcile(userInitiated = true, force = true, skipId = null)
+            MoveOutcome.Moved(newAStart)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Swap failed: ${e.message}", e)
+            MoveOutcome.Refused("Something went wrong while swapping them.")
+        }
+    }
 
     /**
      * Moves today's planned session to [timeMin] (or the nearest free slot, if [flexible]). The session is
@@ -323,7 +488,8 @@ class PlanManager(
             }
         }
 
-        sessionDao.deleteBefore(today.toString())
+        // keep two months of history: the performance report is built from it
+        sessionDao.deleteBefore(today.minusDays(60).toString())
     }
 
     private fun toMillis(date: LocalDate, minute: Int, zone: ZoneId): Long =
@@ -345,7 +511,8 @@ class PlanManager(
         sb.append('#')
         tasks.filter { !it.completed }.sortedBy { it.id }.forEach {
             sb.append(it.id).append('|').append(it.estimatedMinutes).append('|').append(it.spentMinutes)
-                .append('|').append(it.dueDate).append('|').append(it.priority).append('|').append(it.title).append(';')
+                .append('|').append(it.dueDate).append('|').append(it.priority).append('|').append(it.title)
+                .append('|').append(it.deferUntil).append(';')
         }
         sb.append('#')
         habits.sortedBy { it.id }.forEach {

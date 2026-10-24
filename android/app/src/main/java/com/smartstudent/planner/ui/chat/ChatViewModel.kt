@@ -11,11 +11,14 @@ import com.smartstudent.planner.data.remote.ChatActionDto
 import com.smartstudent.planner.data.remote.ChatContextDto
 import com.smartstudent.planner.data.remote.ChatMessageDto
 import com.smartstudent.planner.data.remote.ClarifyOptionDto
+import com.smartstudent.planner.domain.ReportQuestion
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import retrofit2.HttpException
 import java.io.IOException
 
@@ -39,6 +42,14 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
 
     private val _messages = MutableStateFlow(listOf(ChatMessage(nextId++, false, GREETING)))
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+
+    /** "ai" or "rules": which brain answered last. Shown under the title so it is clear what to expect. */
+    private val _mode = MutableStateFlow<String?>(null)
+    val mode: StateFlow<String?> = _mode.asStateFlow()
+
+    /** The backend version that answered last: null before the first answer, "" from an old backend that doesn't say. */
+    private val _serverVersion = MutableStateFlow<String?>(null)
+    val serverVersion: StateFlow<String?> = _serverVersion.asStateFlow()
 
     private val _typing = MutableStateFlow(false)
     val typing: StateFlow<Boolean> = _typing.asStateFlow()
@@ -65,12 +76,31 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
                     .filter { it.pending == null && !it.isError }
                     .takeLast(12)
                     .map { ChatMessageDto(if (it.fromUser) "user" else "assistant", it.text) }
-                val response = service.ask(history, context)
+                val response = try {
+                    service.ask(history, context)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // the report is built from data on this phone, so it doesn't need the server
+                    if (ReportQuestion.matches(clean)) {
+                        showReport(clean, context, "I couldn't reach the server, so I read this on your phone.")
+                        return@launch
+                    }
+                    throw e
+                }
+                _mode.value = response.source.takeIf { it.isNotBlank() }
+                _serverVersion.value = response.version
+
+                // the server didn't understand a question about how you're doing: the phone still can
+                if (response.actions.isEmpty() && response.clarify == null && ReportQuestion.matches(clean)) {
+                    showReport(clean, context, null)
+                    return@launch
+                }
 
                 val results = mutableListOf<String>()
                 val needConfirm = mutableListOf<ChatActionDto>()
                 for (action in response.actions.take(5)) {
-                    if (service.needsConfirmation(action)) needConfirm += action
+                    if (service.needsConfirmation(action, context)) needConfirm += action
                     else service.execute(action, context).takeIf { it.isNotBlank() }?.let { results += it }
                 }
 
@@ -89,6 +119,12 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
                 _typing.value = false
             }
         }
+    }
+
+    private suspend fun showReport(text: String, context: ChatContextDto, note: String?) {
+        val args = JsonObject(mapOf("days" to JsonPrimitive(ReportQuestion.days(text))))
+        val report = service.execute(ChatActionDto("show_report", args), context)
+        say(listOfNotNull(note, report).joinToString("\n"))
     }
 
     fun confirm(messageId: Long) {
@@ -126,8 +162,9 @@ class ChatViewModel(private val service: ChatService) : ViewModel() {
 
     companion object {
         private const val GREETING =
-            "Hi! I'm your planner assistant. Ask about your plan, or tell me what to add or change: " +
-                "for example “add task maths homework 45 min due friday” or “move physics to 6pm”."
+            "Hi! I'm your planner assistant. Ask about your plan, tell me what to add or change, ask how you're doing, " +
+                "or just tell me if the day feels like too much. For example: “move physics to 6pm”, " +
+                "“swap maths and reading”, “how am I doing this week?”."
 
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer { ChatViewModel(container.chatService) }

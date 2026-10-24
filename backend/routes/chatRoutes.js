@@ -5,8 +5,10 @@ const requireAuth = require("../middleware/authMiddleware");
 const { interpret } = require("../lib/chat/rules");
 const { validateAction } = require("../lib/chat/actions");
 const { chatWithAi } = require("../lib/chat/ai");
+const { VERSION } = require("../lib/version");
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const id_ = z.string().min(1).max(80);
 const session = z.object({
   id: z.string().max(80),
   title: z.string().max(200),
@@ -16,11 +18,32 @@ const session = z.object({
   end: z.string().max(5),
   status: z.enum(["PLANNED", "DONE", "MISSED"]),
 });
+const span = z.object({ label: z.string().max(100), start: z.string().max(5), end: z.string().max(5), kind: z.string().max(12).optional() });
+const report = z.object({
+  days: z.number(),
+  trackedDays: z.number(),
+  minutesDone: z.number(),
+  minutesDonePrevious: z.number().nullable().optional(),
+  sessionsDone: z.number(),
+  sessionsMissed: z.number(),
+  completionPercent: z.number().nullable().optional(),
+  tasksCompleted: z.number(),
+  tasksOpen: z.number(),
+  overdue: z.number(),
+  dueSoon: z.number(),
+  onTimePercent: z.number().nullable().optional(),
+  bestDay: z.string().max(12).nullable().optional(),
+  mostMissed: z.string().max(200).nullable().optional(),
+  habits: z
+    .array(z.object({ title: z.string().max(200), done: z.number(), expected: z.number(), streak: z.number() }))
+    .max(30)
+    .default([]),
+});
 const day = z.object({
   sessions: z.array(session).max(60).default([]),
   freeMinutes: z.number().optional(),
-  busy: z.array(z.object({ label: z.string().max(100), start: z.string().max(5), end: z.string().max(5) })).max(40).optional(),
-  freeBlocks: z.array(z.object({ label: z.string().max(100), start: z.string().max(5), end: z.string().max(5) })).max(40).optional(),
+  busy: z.array(span).max(40).optional(),
+  freeBlocks: z.array(span).max(40).optional(),
 });
 
 const body = z.object({
@@ -36,6 +59,7 @@ const body = z.object({
         spent: z.number().optional(),
         priority: z.string().max(10).optional(),
         due: z.string().max(10).nullable().optional(),
+        deferUntil: z.string().max(10).nullable().optional(),
         completed: z.boolean().optional(),
       }))
       .max(200)
@@ -46,6 +70,9 @@ const body = z.object({
       .default([]),
     plan: day.default({ sessions: [] }),
     tomorrow: day.optional(),
+    report: report.optional(),
+    // the task the student was just talking about, so "it" means that one
+    focus: z.object({ taskId: id_, title: z.string().max(200) }).nullable().optional(),
   }),
 });
 
@@ -78,16 +105,17 @@ function buildRouter(deps = {}) {
     if (apiKey) {
       try {
         const out = await ai({ apiKey, model, history: messages, context });
-        return res.json({ ...out, source: "ai" });
+        return res.json({ ...out, source: "ai", version: VERSION });
       } catch (error) {
         console.error("Chat AI failed, using the built-in assistant:", error.message);
         notice = "The AI is unavailable right now, so I used my basic mode.";
       }
     }
 
-    const result = interpret(last.text, context);
+    // the earlier messages let "move it to 9pm" or "I finished that" refer to what was just talked about
+    const result = interpret(last.text, context, messages.slice(0, -1));
     const actions = result.actions.map(validateAction).filter((v) => v.action).map((v) => v.action);
-    return res.json({ reply: result.reply, actions, clarify: result.clarify, source: "rules", notice });
+    return res.json({ reply: result.reply, actions, clarify: result.clarify, source: "rules", notice, version: VERSION });
   });
 
   return router;

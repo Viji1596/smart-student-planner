@@ -28,10 +28,12 @@ class TaskRepository(
 
     suspend fun get(id: String): TaskEntity? = dao.get(id)?.takeIf { !it.deleted }
 
-    suspend fun add(title: String, priority: String, minutes: Int, dueDate: Long?) {
+    /** Adds a task and returns its id (so the assistant can remember "the task I just added"). */
+    suspend fun add(title: String, priority: String, minutes: Int, dueDate: Long?): String {
+        val id = UUID.randomUUID().toString()
         dao.upsert(
             TaskEntity(
-                id = UUID.randomUUID().toString(),
+                id = id,
                 title = title.trim(),
                 priority = priority,
                 estimatedMinutes = minutes,
@@ -44,6 +46,7 @@ class TaskRepository(
             )
         )
         SyncScheduler.syncSoon(appContext)
+        return id
     }
 
     /**
@@ -62,6 +65,7 @@ class TaskRepository(
                 completed = task.completed || spent >= minutes,
                 dirty = true,
                 updatedAtLocal = System.currentTimeMillis(),
+                completedAt = if (task.completed || spent >= minutes) (task.completedAt ?: System.currentTimeMillis()) else null,
             )
         )
         SyncScheduler.syncSoon(appContext)
@@ -76,9 +80,19 @@ class TaskRepository(
                 spentMinutes = spent.coerceAtLeast(0),
                 dirty = true,
                 updatedAtLocal = System.currentTimeMillis(),
+                completedAt = if (completed) System.currentTimeMillis() else null,
             )
         )
         SyncScheduler.syncSoon(appContext)
+    }
+
+    /**
+     * Don't plan this task before [until] (null brings it back). This stays on this phone: it is not synced,
+     * and it doesn't touch the task itself, so nothing needs pushing.
+     */
+    suspend fun defer(taskId: String, until: java.time.LocalDate?) {
+        val task = dao.get(taskId) ?: return
+        dao.upsert(task.copy(deferUntil = until?.toString()))
     }
 
     /** "I worked on this for [minutes]". Completes the task once all estimated minutes are done. */
@@ -91,6 +105,7 @@ class TaskRepository(
                 completed = spent >= task.estimatedMinutes,
                 dirty = true,
                 updatedAtLocal = System.currentTimeMillis(),
+                completedAt = if (spent >= task.estimatedMinutes) System.currentTimeMillis() else task.completedAt,
             )
         )
         SyncScheduler.syncSoon(appContext)
@@ -126,7 +141,18 @@ class TaskRepository(
         for (remote in response.tasks) {
             val local = dao.get(remote.id)
             if (local?.dirty == true) continue // local edit wins; it will be pushed next
-            if (remote.deleted) dao.remove(remote.id) else dao.upsert(remote.toEntity())
+            if (remote.deleted) {
+                dao.remove(remote.id)
+            } else {
+                // What only this phone knows (put off until a day, when it was finished here) survives a sync.
+                val finishedElsewhere = local != null && !local.completed && remote.completed
+                dao.upsert(
+                    remote.toEntity().copy(
+                        deferUntil = local?.deferUntil,
+                        completedAt = local?.completedAt ?: if (finishedElsewhere) System.currentTimeMillis() else null,
+                    )
+                )
+            }
         }
         tokenStore.setLastSync(response.serverTime)
     }

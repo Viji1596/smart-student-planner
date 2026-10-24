@@ -212,6 +212,11 @@ private fun TaskCard(task: TaskEntity, onEdit: () -> Unit, onToggle: () -> Unit,
             append(" · ${task.spentMinutes}/${task.estimatedMinutes} min done")
         }
         if (task.dirty) append(" · not synced")
+        // put off by "do it tomorrow" or "lighten my day": say why it isn't in today's plan
+        val startsOn = task.deferUntil?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+        if (!task.completed && startsOn != null && startsOn.isAfter(java.time.LocalDate.now())) {
+            append(" · starts ${startsOn.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", java.util.Locale.ENGLISH))}")
+        }
     }
 
     WhiteCard(Modifier.fillMaxWidth(), onClick = onEdit) {

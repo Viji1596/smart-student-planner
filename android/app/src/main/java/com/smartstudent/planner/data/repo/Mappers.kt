@@ -100,6 +100,7 @@ fun TaskEntity.toInfo(zone: ZoneId = ZoneId.systemDefault()) = TaskInfo(
     estimatedMinutes = estimatedMinutes,
     spentMinutes = spentMinutes,
     dueDay = dueDate?.let { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
+    notBefore = deferUntil?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
 )
 
 fun HabitEntity.toInfo() = HabitInfo(

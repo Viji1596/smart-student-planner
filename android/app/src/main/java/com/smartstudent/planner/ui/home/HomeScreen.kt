@@ -38,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -91,6 +92,8 @@ fun HomeScreen(
     val remindersOn by viewModel.remindersOn.collectAsState()
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResume() }
+    // Home may come back after the assistant (or another screen) changed things: bring the plan up to date.
+    LaunchedEffect(Unit) { viewModel.onResume() }
 
     val current = state
     if (current == null) {

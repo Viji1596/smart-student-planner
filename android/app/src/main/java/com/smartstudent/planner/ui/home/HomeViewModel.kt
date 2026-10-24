@@ -183,9 +183,12 @@ class HomeViewModel(
         }
     }
 
-    /** Called when the app comes back to the foreground. */
+    /**
+     * Called when the app comes back to the foreground, and whenever Home appears (for example after the assistant
+     * changed something). Re-plans only if something relevant changed, so it is cheap.
+     */
     fun onResume() {
-        viewModelScope.launch { planManager.reconcileIfNeeded() }
+        viewModelScope.launch { planManager.reconcile() }
     }
 
     /** Whether the user has switched reminders on (the Home screen suggests it when they haven't). */

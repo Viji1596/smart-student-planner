@@ -106,3 +106,36 @@ test("formatting", () => {
   assert.equal(hhmm(65), "01:05");
   assert.equal(hhmm(0), "00:00");
 });
+
+test("a bare hour means the next such time still ahead today", () => {
+  const at = (text, now) => parseTime(text, now)?.minutes;
+  assert.equal(at("to 6", 15 * 60), 18 * 60, "at 15:00, 6 is 18:00");
+  assert.equal(at("to 6", 5 * 60), 6 * 60, "at 05:00, 6 is 06:00");
+  assert.equal(at("at 9", 10 * 60), 21 * 60, "9 already passed this morning: 21:00");
+  assert.equal(at("for 7:30", 15 * 60), 19 * 60 + 30, "reschedule reading for 7:30");
+  assert.equal(at("6 o'clock", 12 * 60), 18 * 60);
+  assert.equal(at("at 12", 9 * 60), 12 * 60, "12 is noon");
+  assert.equal(at("to 11", 9 * 60), 11 * 60);
+});
+
+test("explicit times are never guessed", () => {
+  const at = (text, now) => parseTime(text, now)?.minutes;
+  assert.equal(at("to 6am", 15 * 60), 6 * 60);
+  assert.equal(at("to 6pm", 5 * 60), 18 * 60);
+  assert.equal(at("to 18:30", 5 * 60), 18 * 60 + 30);
+  assert.equal(at("to 07:30", 15 * 60), 7 * 60 + 30, "a leading zero is a 24-hour time");
+  assert.equal(at("at 14", 5 * 60), 14 * 60);
+});
+
+test("numbers that are not times are left alone", () => {
+  assert.equal(parseTime("to 5 tasks", 600), null);
+  assert.equal(parseTime("for 30 minutes", 600), null);
+  assert.equal(parseTime("in 3 days", 600), null);
+  assert.equal(parseTime("on the 25th", 600), null);
+});
+
+test("tonight and the parts of the day", () => {
+  assert.deepEqual(parseTime("tonight", 600), { minutes: 1200, text: "tonight", flexible: true });
+  assert.equal(parseTime("this evening").minutes, 1080);
+});
+

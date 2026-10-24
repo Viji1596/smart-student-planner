@@ -14,7 +14,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         HabitCompletionEntity::class,
         PlannedSessionEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -129,5 +129,13 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
 val MIGRATION_5_6 = object : Migration(5, 6) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE `planned_sessions` ADD COLUMN `pinned` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** Phase 6 -> next: tasks can be put off until a day, and remember when they were finished. Keeps existing data. */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `tasks` ADD COLUMN `deferUntil` TEXT")
+        db.execSQL("ALTER TABLE `tasks` ADD COLUMN `completedAt` INTEGER")
     }
 }

@@ -55,6 +55,8 @@ fun ChatScreen(container: AppContainer, onBack: () -> Unit) {
     val viewModel: ChatViewModel = viewModel(factory = ChatViewModel.factory(container))
     val messages by viewModel.messages.collectAsState()
     val typing by viewModel.typing.collectAsState()
+    val mode by viewModel.mode.collectAsState()
+    val version by viewModel.serverVersion.collectAsState()
     var input by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
     val scheme = MaterialTheme.colorScheme
@@ -78,7 +80,22 @@ fun ChatScreen(container: AppContainer, onBack: () -> Unit) {
             Spacer(Modifier.padding(start = 12.dp))
             Column {
                 Text("Assistant", fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = scheme.onBackground)
-                Text("Changes happen on your phone. Deleting always asks first.", fontSize = 12.sp, color = scheme.onSurfaceVariant)
+                Text(
+                    listOfNotNull(
+                        when (mode) {
+                            "ai" -> "AI mode"
+                            "rules" -> "Basic mode (no AI)"
+                            else -> null
+                        },
+                        when {
+                            version == null -> null
+                            version!!.isBlank() -> "the server is out of date: update the backend"
+                            else -> "server $version"
+                        },
+                    ).joinToString(" · ").ifEmpty { "Changes happen on your phone. Deleting always asks first." },
+                    fontSize = 12.sp,
+                    color = scheme.onSurfaceVariant,
+                )
             }
         }
 

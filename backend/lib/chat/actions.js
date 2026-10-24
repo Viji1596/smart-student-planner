@@ -116,6 +116,63 @@ const ACTIONS = {
       required: ["time"],
     },
   },
+  place_task: {
+    confirm: false,
+    description:
+      "Schedule a task at a time today when it has no planned session yet (for example 'do it at 9pm' about a task that was just added). It creates a session there and keeps it. If the task already has a session today, use move_session instead.",
+    schema: z.object({ taskId: id, time: hm, flexible: z.boolean().optional() }),
+    input_schema: {
+      type: "object",
+      properties: { taskId: { type: "string" }, time: { type: "string", description: "HH:mm, 24-hour" }, flexible: { type: "boolean" } },
+      required: ["taskId", "time"],
+    },
+  },
+  swap_sessions: {
+    confirm: false,
+    description: "Swap the times of two of today's planned sessions: each takes the other's start time. Use the two session ids.",
+    schema: z.object({ sessionA: id, sessionB: id }).refine((a) => a.sessionA !== a.sessionB, "two different sessions"),
+    input_schema: {
+      type: "object",
+      properties: { sessionA: { type: "string" }, sessionB: { type: "string" } },
+      required: ["sessionA", "sessionB"],
+    },
+  },
+  defer_task: {
+    confirm: false,
+    description:
+      "Put a task off: it will not be planned before the given day (use for 'do it tomorrow', 'postpone it to friday'). This does NOT change the due date; use update_task for that.",
+    schema: z.object({ taskId: id, until: isoDate }),
+    input_schema: {
+      type: "object",
+      properties: { taskId: { type: "string" }, until: { type: "string", description: "First day it may be planned, YYYY-MM-DD" } },
+      required: ["taskId", "until"],
+    },
+  },
+  start_task: {
+    confirm: false,
+    description: "Bring a put-off task back: it can be planned from today again.",
+    schema: z.object({ taskId: id }),
+    input_schema: { type: "object", properties: { taskId: { type: "string" } }, required: ["taskId"] },
+  },
+  lighten_day: {
+    confirm: true,
+    description:
+      "Make today lighter: keep the most urgent tasks (about keepMinutes of work, default 120) and put the rest off until tomorrow. Use when the student says they are overwhelmed or have too much to do. The app shows exactly what would move and asks the student to confirm.",
+    schema: z.object({ keepMinutes: z.number().int().min(30).max(600).optional() }),
+    input_schema: { type: "object", properties: { keepMinutes: { type: "integer", description: "Roughly how much work to keep today (minutes)" } } },
+  },
+  show_report: {
+    confirm: false,
+    description: "Show the student's performance report (work done, sessions missed, tasks, habits and streaks) for the last 7, 14 or 30 days.",
+    schema: z.object({ days: z.number().int().min(1).max(60).optional() }),
+    input_schema: { type: "object", properties: { days: { type: "integer", description: "7, 14 or 30" } } },
+  },
+  show_focus: {
+    confirm: false,
+    description: "Show the three most important things to start with, most urgent first, with a tiny first step.",
+    schema: z.object({}),
+    input_schema: { type: "object", properties: {} },
+  },
   skip_session: {
     confirm: false,
     description: "Skip one of today's planned sessions: its work is planned again for later today.",

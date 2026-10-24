@@ -1,4 +1,5 @@
 const express = require("express");
+const { VERSION } = require("./lib/version");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
@@ -40,7 +41,7 @@ app.use(express.json({ limit: "100kb" }));
 
 app.get("/", (req, res) => res.json({ message: "Smart Student Planner API" }));
 app.get("/health", (req, res) =>
-  res.json({ ok: true, version: "6", features: ["timetable-import", "pdf-text", "text-boxes", "chat"] })
+  res.json({ ok: true, version: VERSION, features: ["timetable-import", "pdf-text", "text-boxes", "chat", "chat-moves", "chat-support", "chat-report"] })
 );
 
 app.use(

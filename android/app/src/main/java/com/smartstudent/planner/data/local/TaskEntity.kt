@@ -22,4 +22,8 @@ data class TaskEntity(
     val deleted: Boolean,
     val dirty: Boolean,
     val updatedAtLocal: Long,
+    /** Local only (not synced): don't plan this task before this day (yyyy-MM-dd). Set by "do it tomorrow". */
+    val deferUntil: String? = null,
+    /** Local only (not synced): when it was marked done on this phone. Used for the performance report. */
+    val completedAt: Long? = null,
 )

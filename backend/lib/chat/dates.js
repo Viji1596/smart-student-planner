@@ -56,6 +56,12 @@ function parseDate(text, today) {
   const todayWd = weekdayOf(today);
   let m;
 
+  // 2026-10-25: the assistant's own buttons use this form
+  if ((m = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(l))) {
+    const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    if (isRealDate(y, mo, d)) return { date: `${y}-${pad(mo)}-${pad(d)}`, text: m[0] };
+  }
+
   if ((m = /\bday after tomorrow\b/.exec(l))) return { date: addDays(today, 2), text: m[0] };
   if ((m = /\b(tomorrow|tmrw|tmr)\b/.exec(l))) return { date: addDays(today, 1), text: m[0] };
   if ((m = /\b(today|tonight)\b/.exec(l))) return { date: today, text: m[0] };
@@ -81,9 +87,9 @@ function parseDate(text, today) {
     if (year !== null && year < 100) year += 2000;
     return inYear(Number(m[1]), Number(m[2]), year, today, m[0]);
   }
-  // "on the 25th"
-  if ((m = /\bon the (\d{1,2})(?:st|nd|rd|th)\b/.exec(l))) {
-    const day = Number(m[1]);
+  // "on the 25th", "by 25th", "due the 3rd" (a bare "2nd year" is not a date: it needs the little word before)
+  if ((m = /\b(?:on|by|before|until|till|due|for)\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b|\bthe\s+(\d{1,2})(?:st|nd|rd|th)\b/.exec(l))) {
+    const day = Number(m[1] || m[2]);
     const [y, mo, d] = today.split("-").map(Number);
     let month = mo;
     let year = y;
@@ -106,6 +112,22 @@ function parseDate(text, today) {
   return null;
 }
 
+/**
+ * What follows the word "due" / "deadline": a date as usual, or just "30th" / "28" (the day of the month).
+ * Returns { date, text } or null.
+ */
+function parseDueTail(tail, today) {
+  const t = String(tail).trim();
+  const direct = parseDate(t, today);
+  if (direct) return direct;
+  const ordinal = /^(\d{1,2})(?:st|nd|rd|th)\b/.exec(t) || /^(\d{1,2})\b(?!\s*[:/.-]?\s*\d)/.exec(t);
+  if (ordinal) {
+    const viaDay = parseDate(`on the ${ordinal[1]}th`, today);
+    if (viaDay) return { date: viaDay.date, text: ordinal[0] };
+  }
+  return null;
+}
+
 function inYear(day, month, year, today, text) {
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   const [ty] = today.split("-").map(Number);
@@ -121,34 +143,53 @@ function inYear(day, month, year, today, text) {
 }
 
 /** Parts of the day, as a starting time. */
-const PARTS_OF_DAY = { morning: 9 * 60, noon: 12 * 60, afternoon: 14 * 60, evening: 18 * 60, night: 20 * 60 };
+const PARTS_OF_DAY = { morning: 9 * 60, noon: 12 * 60, afternoon: 14 * 60, evening: 18 * 60, night: 20 * 60, tonight: 20 * 60 };
+
+/**
+ * "6" or "7:30" with no am/pm. With [nowMin] it means the next such time that is still ahead today
+ * (at 15:00, "6" is 18:00; at 05:00 it is 06:00). Without it, a student's guess: 1-6 is pm, 7-11 is am.
+ */
+function resolveAmbiguous(hour, minutes, nowMin) {
+  if (hour === 12) return 12 * 60 + minutes; // noon
+  if (nowMin === undefined || nowMin === null) return (hour >= 1 && hour <= 6 ? hour + 12 : hour) * 60 + minutes;
+  const am = hour * 60 + minutes;
+  const pm = (hour + 12) * 60 + minutes;
+  return am >= nowMin + 5 ? am : pm;
+}
 
 /**
  * Finds a time of day in [text]. Returns { minutes, text, flexible } or null.
  * "flexible" means a part of the day ("evening"), i.e. "somewhere around then".
+ * [nowMin] (minutes since midnight) settles bare hours like "6": see resolveAmbiguous.
  */
-function parseTime(text) {
+function parseTime(text, nowMin) {
   const l = String(text).toLowerCase();
   let m;
   if ((m = /\b(\d{1,2}):(\d{2})\s*(am|pm)?\b/.exec(l))) {
     const mins = Number(m[2]);
     let h = Number(m[1]);
     if (mins > 59 || h > 23) return null;
-    if (m[3]) h = (h % 12) + (m[3] === "pm" ? 12 : 0);
-    return { minutes: h * 60 + mins, text: m[0], flexible: false };
+    if (m[3]) return { minutes: ((h % 12) + (m[3] === "pm" ? 12 : 0)) * 60 + mins, text: m[0], flexible: false };
+    // 18:30, 00:15 and 07:30 (a leading zero) are 24-hour times; 7:30 is "7:30 something"
+    if (h >= 13 || h === 0 || /^0\d/.test(m[1])) return { minutes: h * 60 + mins, text: m[0], flexible: false };
+    return { minutes: resolveAmbiguous(h, mins, nowMin), text: m[0], flexible: false };
   }
   if ((m = /\b(\d{1,2})\s*(am|pm)\b/.exec(l))) {
     const h = Number(m[1]);
     if (h < 1 || h > 12) return null;
     return { minutes: ((h % 12) + (m[2] === "pm" ? 12 : 0)) * 60, text: m[0], flexible: false };
   }
-  if ((m = /\bat (\d{1,2})\b(?!\s*(?:minutes?|mins?|hours?|hrs?|h)\b)/.exec(l))) {
+  if ((m = /\b(\d{1,2})\s*o'?\s*clock\b/.exec(l))) {
+    const h = Number(m[1]);
+    if (h < 1 || h > 24) return null;
+    return { minutes: h > 12 ? (h % 24) * 60 : resolveAmbiguous(h, 0, nowMin), text: m[0], flexible: false };
+  }
+  if ((m = /\b(?:at|to|for|around|by|till|until)\s+(\d{1,2})\b(?!\s*(?:minutes?|mins?|hours?|hrs?|h\b|%|st\b|nd\b|rd\b|th\b|tasks?|sessions?|times?|x\b))/.exec(l))) {
     const h = Number(m[1]);
     if (h < 1 || h > 23) return null;
-    const hh = h >= 1 && h <= 6 ? h + 12 : h; // "at 4" means 16:00 for a student
-    return { minutes: hh * 60, text: m[0], flexible: false };
+    return { minutes: h > 12 ? h * 60 : resolveAmbiguous(h, 0, nowMin), text: m[0], flexible: false };
   }
-  if ((m = /\b(morning|noon|afternoon|evening|night)\b/.exec(l))) {
+  if ((m = /\b(morning|noon|afternoon|evening|night|tonight)\b/.exec(l))) {
     return { minutes: PARTS_OF_DAY[m[1]], text: m[0], flexible: true };
   }
   return null;
@@ -176,4 +217,4 @@ function parseDuration(text) {
 
 const hhmm = (minutes) => `${pad(Math.floor(minutes / 60) % 24)}:${pad(minutes % 60)}`;
 
-module.exports = { parseDate, parseTime, parseDuration, addDays, weekdayOf, label, hhmm, WEEKDAYS };
+module.exports = { parseDate, parseDueTail, parseTime, parseDuration, addDays, weekdayOf, label, hhmm, WEEKDAYS };

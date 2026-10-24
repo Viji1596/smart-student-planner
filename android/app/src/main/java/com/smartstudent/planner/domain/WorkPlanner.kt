@@ -11,6 +11,8 @@ data class TaskInfo(
     val estimatedMinutes: Int,
     val spentMinutes: Int,
     val dueDay: LocalDate?,
+    /** Not planned before this day (moved to tomorrow, or put off to lighten a heavy day). */
+    val notBefore: LocalDate? = null,
 )
 
 enum class HabitKind { DAILY, DAYS, WEEKLY }
@@ -107,6 +109,7 @@ object WorkPlanner {
     ): List<WorkItem> = tasks.mapNotNull { task ->
         val remaining = task.estimatedMinutes - task.spentMinutes
         if (remaining <= 0) return@mapNotNull null
+        if (task.notBefore != null && date < task.notBefore) return@mapNotNull null
 
         val done = doneToday[task.id] ?: 0
         val atStartOfDay = remaining + done // what was left when the day began

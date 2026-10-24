@@ -42,6 +42,9 @@ abstract class PlannedSessionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun insertAll(items: List<PlannedSessionEntity>)
 
+    @Query("SELECT * FROM planned_sessions WHERE date >= :from AND date <= :to ORDER BY date ASC, startMin ASC")
+    abstract suspend fun getBetween(from: String, to: String): List<PlannedSessionEntity>
+
     @Query("SELECT * FROM planned_sessions WHERE id = :id")
     abstract suspend fun getById(id: String): PlannedSessionEntity?
 
