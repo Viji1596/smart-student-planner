@@ -1,0 +1,196 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+model User {
+  id        String   @id @default(cuid())
+  googleId  String   @unique
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tasks             Task[]
+  scheduleSessions  ScheduleSession[]
+  timetableEntries TimetableEntry[]
+  availability Availability[]
+  refreshTokens RefreshToken[]
+  settings UserSettings?
+  habits Habit[]
+  habitCompletions HabitCompletion[]
+}
+model Task {
+  id               String   @id @default(cuid())
+  userId           String
+  title            String
+  priority         String
+  estimatedMinutes Int
+  // Minutes already worked on; the planner only schedules what is left
+  spentMinutes     Int      @default(0)
+  dueDate          DateTime?
+  completed        Boolean  @default(false)
+
+  isRecurring      Boolean  @default(false)
+  recurrenceType   String?
+  recurrenceEnd    DateTime?
+
+  // Soft delete so other devices learn about deletions when they sync
+  deletedAt        DateTime?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduleSessions ScheduleSession[]
+
+  @@index([userId, isRecurring])
+  @@index([userId, updatedAt])
+}
+model ScheduleSession {
+  id        String   @id @default(cuid())
+  userId    String
+  taskId    String
+  startTime DateTime
+  endTime   DateTime
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, startTime])
+  @@index([taskId])
+}
+model TimetableEntry {
+  id        String    @id @default(cuid())
+  userId    String
+  // 1 = Monday ... 7 = Sunday (ISO weekday)
+  dayOfWeek Int
+  title     String
+  // "HH:mm", 24-hour
+  startTime String
+  endTime   String
+
+  // Soft delete so other devices learn about deletions when they sync
+  deletedAt DateTime?
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, dayOfWeek])
+  @@index([userId, updatedAt])
+}
+
+model UserSettings {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  wakeTime              String   @default("06:30")
+  sleepTime             String   @default("23:00")
+  morningRoutineMinutes Int      @default(45)
+  breakfastStart        String   @default("08:00")
+  breakfastMinutes      Int      @default(20)
+  lunchStart            String   @default("13:00")
+  lunchMinutes          Int      @default(40)
+  dinnerStart           String   @default("20:00")
+  dinnerMinutes         Int      @default(40)
+  timezone              String   @default("Asia/Kolkata")
+
+  // Travel on days that have classes (0 = off). Way there and way back can differ.
+  commuteToMinutes      Int      @default(0)
+  commuteFromMinutes    Int      @default(0)
+  arriveEarlyMinutes    Int      @default(10)
+
+  // A protected rest block in the middle of the day (0 minutes = off)
+  restStart             String   @default("16:00")
+  restMinutes           Int      @default(0)
+
+  // Breaks inside study time: short between sessions, long after enough work in a row (0 = off)
+  breakMinutes          Int      @default(10)
+  longBreakAfterMinutes Int      @default(120)
+  longBreakMinutes      Int      @default(20)
+
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model Availability {
+  id        String   @id @default(cuid())
+  userId    String
+  dayOfWeek Int
+  startTime String
+  endTime   String
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, dayOfWeek])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// A recurring task. kind: DAILY | DAYS (fixed weekdays in `days`, e.g. "1,3,5") | WEEKLY (timesPerWeek)
+model Habit {
+  id           String   @id @default(cuid())
+  userId       String
+  title        String
+  minutes      Int
+  priority     String
+  kind         String
+  // ISO weekdays, 1 = Monday ... 7 = Sunday, comma separated; only used when kind = DAYS
+  days         String   @default("")
+  timesPerWeek Int      @default(0)
+
+  deletedAt    DateTime?
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  completions  HabitCompletion[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+}
+
+// "I did this habit on this date". The id is always `${habitId}_${date}` so two devices
+// marking the same day produce the same row.
+model HabitCompletion {
+  id        String    @id @default(cuid())
+  userId    String
+  habitId   String
+  // "YYYY-MM-DD" in the user's own calendar
+  date      String
+
+  deletedAt DateTime?
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  habit     Habit     @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId, updatedAt])
+  @@index([habitId])
+}

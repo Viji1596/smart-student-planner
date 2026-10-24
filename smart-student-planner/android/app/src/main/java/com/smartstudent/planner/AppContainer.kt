@@ -1,0 +1,137 @@
+package com.smartstudent.planner
+
+import android.content.Context
+import androidx.room.Room
+import com.smartstudent.planner.data.local.AppDatabase
+import com.smartstudent.planner.data.local.AppearanceStore
+import com.smartstudent.planner.data.chat.ChatService
+import com.smartstudent.planner.data.ocr.OcrReader
+import com.smartstudent.planner.data.report.ReportBuilder
+import com.smartstudent.planner.data.report.SummaryService
+import com.smartstudent.planner.data.local.MIGRATION_1_2
+import com.smartstudent.planner.data.local.MIGRATION_2_3
+import com.smartstudent.planner.data.local.MIGRATION_3_4
+import com.smartstudent.planner.data.local.MIGRATION_4_5
+import com.smartstudent.planner.data.local.MIGRATION_5_6
+import com.smartstudent.planner.data.local.MIGRATION_6_7
+import com.smartstudent.planner.data.local.MIGRATION_7_8
+import com.smartstudent.planner.data.remote.AuthInterceptor
+import com.smartstudent.planner.data.remote.PlannerApi
+import com.smartstudent.planner.data.remote.TokenAuthenticator
+import com.smartstudent.planner.data.remote.TokenStore
+import com.smartstudent.planner.data.repo.AuthRepository
+import com.smartstudent.planner.data.repo.HabitRepository
+import com.smartstudent.planner.data.repo.SettingsRepository
+import com.smartstudent.planner.data.repo.SyncManager
+import com.smartstudent.planner.data.repo.TaskRepository
+import com.smartstudent.planner.data.repo.TimetableRepository
+import com.smartstudent.planner.reminders.PlanManager
+import com.smartstudent.planner.reminders.ReminderScheduler
+import com.smartstudent.planner.reminders.ReminderStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import retrofit2.Retrofit
+import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.util.concurrent.TimeUnit
+
+/** Hand-rolled dependency container (simple enough that a DI framework isn't needed yet). */
+class AppContainer(context: Context) {
+    private val appContext = context.applicationContext
+
+    val tokenStore = TokenStore(appContext)
+
+    private val database = Room.databaseBuilder(appContext, AppDatabase::class.java, "planner.db")
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+        .build()
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        explicitNulls = false
+    }
+
+    private fun buildClient(builder: OkHttpClient.Builder) = builder
+        .connectTimeout(20, TimeUnit.SECONDS)
+        // Free hosting sleeps when idle: the server can take about a minute to wake, and then
+        // the database a few seconds more.
+        .readTimeout(90, TimeUnit.SECONDS)
+        .build()
+
+    private fun buildApi(client: OkHttpClient): PlannerApi = Retrofit.Builder()
+        .baseUrl(BuildConfig.BASE_URL)
+        .client(client)
+        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+        .build()
+        .create(PlannerApi::class.java)
+
+    /** No auth headers: used for login and token refresh. */
+    private val plainApi: PlannerApi = buildApi(buildClient(OkHttpClient.Builder()))
+
+    /** Adds the access token and refreshes it automatically on 401. */
+    private val authedApi: PlannerApi = buildApi(
+        buildClient(
+            OkHttpClient.Builder()
+                .addInterceptor(AuthInterceptor(tokenStore))
+                .authenticator(TokenAuthenticator(tokenStore, lazyOf(plainApi)))
+        )
+    )
+
+    val authRepository = AuthRepository(plainApi, tokenStore, database, appContext)
+    val taskRepository = TaskRepository(authedApi, database.taskDao(), tokenStore, appContext)
+    val timetableRepository = TimetableRepository(authedApi, database.timetableDao(), tokenStore, appContext)
+    val settingsRepository = SettingsRepository(authedApi, database.settingsDao(), appContext)
+
+    val habitRepository = HabitRepository(
+        authedApi, database.habitDao(), database.habitCompletionDao(), tokenStore, appContext,
+    )
+
+    val syncManager = SyncManager(
+        tokenStore, taskRepository, timetableRepository, settingsRepository, habitRepository,
+    )
+
+    // Reads timetables from photos and PDFs on the phone
+    val ocrReader = OcrReader(appContext)
+
+    // ---- reminders and today's committed plan
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    val plannedSessionDao = database.plannedSessionDao()
+    val reportDao = database.reportDao()
+    val reminderStore = ReminderStore(appContext)
+    val reminderScheduler = ReminderScheduler(appContext, reminderStore)
+
+    val planManager = PlanManager(
+        appContext = appContext,
+        tokenStore = tokenStore,
+        settings = settingsRepository,
+        timetable = timetableRepository,
+        tasks = taskRepository,
+        habits = habitRepository,
+        sessionDao = plannedSessionDao,
+        store = reminderStore,
+        scheduler = reminderScheduler,
+        scope = appScope,
+    )
+
+    // The report (grade, finished against scheduled, deadlines): one builder for the chat, Progress and the bedtime summaries
+    val reportBuilder = ReportBuilder(plannedSessionDao, taskRepository, habitRepository)
+    val summaryService = SummaryService(appContext, reportBuilder, reportDao, reminderStore)
+
+    /** Light, dark, or follow the phone. */
+    val appearanceStore = AppearanceStore(appContext)
+
+    // The assistant: the server interprets what you type, the phone does the work
+    val chatService = ChatService(
+        api = authedApi,
+        settings = settingsRepository,
+        timetable = timetableRepository,
+        tasks = taskRepository,
+        habits = habitRepository,
+        sessionDao = plannedSessionDao,
+        planManager = planManager,
+        reports = reportBuilder,
+    )
+}
